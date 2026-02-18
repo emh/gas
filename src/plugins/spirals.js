@@ -41,9 +41,9 @@ function polarToXY(centerX, centerY, angleRadians, radius) {
   };
 }
 
-const BASE_THETA_STEP = 0.2;
-const ACCEL_MAG = 0.02;
-const ACCEL_JITTER = 0.0;
+const BASE_THETA_STEP = 0.1;
+const ACCEL_MAG = 0.03;
+const ACCEL_JITTER = 0.1;
 const FRICTION = 0.985;
 const VELOCITY_MAX = 6;
 const BOUNCE_LOSS = 0.85;
@@ -206,7 +206,7 @@ export const spiralsPlugin = {
     const accelNoiseSpeed = params.accelNoiseSpeed;
     const lineThickness = params.lineThickness;
     const opacity = clamp(params.opacity, 0, 1);
-    const thetaStep = BASE_THETA_STEP / tightness;
+    const thetaStep = BASE_THETA_STEP;// / tightness;
 
     ctx.beginPath();
 
