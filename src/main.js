@@ -1,5 +1,5 @@
 import { GenSynthEngine } from "./engine.js";
-import { randomCirclesPlugin } from "./plugins/randomCircles.js";
+import { circlesPlugin } from "./plugins/circles.js";
 
 const canvas = document.getElementById("stage");
 const paramsForm = document.getElementById("params-form");
@@ -24,10 +24,10 @@ let paramsCollapsed = false;
 let speedIndex = 0;
 
 const option = document.createElement("option");
-option.value = randomCirclesPlugin.id;
-option.textContent = randomCirclesPlugin.name;
+option.value = circlesPlugin.id;
+option.textContent = circlesPlugin.name;
 algoSelect.append(option);
-algoSelect.value = randomCirclesPlugin.id;
+algoSelect.value = circlesPlugin.id;
 
 function setRunUi(running) {
   if (!playPauseBtn) {
@@ -133,7 +133,7 @@ function downloadCanvasSnapshot() {
 const engine = new GenSynthEngine({
   canvas,
   paramsForm,
-  plugin: randomCirclesPlugin,
+  plugin: circlesPlugin,
   onRunStateChange: (running) => {
     setRunUi(running);
   },

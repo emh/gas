@@ -11,9 +11,9 @@ function randomAroundCanvas(dimension, radius) {
   return randomBetween(-offset, dimension + offset);
 }
 
-export const randomCirclesPlugin = {
-  id: "random-circles",
-  name: "Random Circles",
+export const circlesPlugin = {
+  id: "circles",
+  name: "Circles",
 
   init() {
     return {
