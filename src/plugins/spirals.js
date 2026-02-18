@@ -42,7 +42,7 @@ function polarToXY(centerX, centerY, angleRadians, radius) {
 }
 
 const BASE_THETA_STEP = 0.2;
-const ACCEL_MAG = 0.01;
+const ACCEL_MAG = 0.02;
 const ACCEL_JITTER = 0.0;
 const FRICTION = 0.985;
 const VELOCITY_MAX = 6;
