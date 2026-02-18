@@ -223,6 +223,10 @@ body {
   gap: var(--param-row-gap);
 }
 
+.param-control-row-bounds {
+  gap: 0;
+}
+
 .param-fn-btn {
   appearance: none;
   width: var(--fn-btn-width);
@@ -280,6 +284,10 @@ body {
   padding: 0 4px;
 }
 
+.tri-control-bounds {
+  width: var(--slider-row-width);
+}
+
 .tri-track {
   position: relative;
   width: calc(var(--slider-row-width) - var(--fn-btn-width) - var(--param-row-gap) - 12px);
@@ -290,6 +298,10 @@ body {
   background-repeat: no-repeat;
   background-position: center center;
   background-size: 100% 1px;
+}
+
+.tri-control-bounds .tri-track {
+  width: calc(var(--slider-row-width) - 12px);
 }
 
 .tri-track::before {

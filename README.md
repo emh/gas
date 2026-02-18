@@ -49,10 +49,18 @@ A plugin exports an object with:
         default: 0.5,
         step: 0.01,
       },
+      {
+        type: "bounds",
+        key: "radiusBand",
+        label: "Radius Band",
+        min: 0,
+        max: 1000,
+        step: 1,
+      },
     ],
   }),
   run: ({ ctx, width, height, frame, deltaMs, timestamp, params, clear }) => {
-    const radius = params.radius;
+    const radiusBand = params.radiusBand; // { min, max }
     const lineThickness = params.lineThickness;
     const opacity = params.opacity;
     // draw here
@@ -71,9 +79,15 @@ Range default behavior:
 - If `default` is a number, `current` starts at that number while `min/max` start at full limits.
 - If `default` is an object (`{ min, max, current }`), those values are used.
 
+Bounds default behavior:
+
+- If `default` is omitted, `min/max` start at full limits.
+- If `default` is an object (`{ min, max }`), those values are used.
+
 Runtime param behavior:
 
 - Plugins receive only the `current` value for each range param.
+- Plugins receive `{ min, max }` objects for each bounds param.
 
 ## Run locally
 

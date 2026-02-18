@@ -78,6 +78,15 @@ function isRangeValue(value) {
   );
 }
 
+function isBoundsValue(value) {
+  return (
+    value !== null
+    && typeof value === "object"
+    && Number.isFinite(value.min)
+    && Number.isFinite(value.max)
+  );
+}
+
 function isRangeDefaultObject(value) {
   return value !== null && typeof value === "object";
 }
@@ -90,11 +99,16 @@ function isRangeDefaultObject(value) {
  * Parameter definition:
  * - Number: { key, label?, min, max, default, step? }
  * - Range: { type: "range", key, label?, min, max, default, step? }
+ * - Bounds: { type: "bounds", key, label?, min, max, default?, step? }
  *
  * Range default behavior:
  * - default omitted -> min/max use full limits, current starts at midpoint.
  * - default is number -> min/max use full limits, current uses default.
  * - default is object -> can set min/max/current.
+ *
+ * Bounds default behavior:
+ * - default omitted -> min/max use full limits.
+ * - default is object -> can set min/max.
  */
 export class GenSynthEngine {
   constructor({ canvas, paramsForm, statusEl, plugin, onRunStateChange }) {
@@ -176,6 +190,12 @@ export class GenSynthEngine {
   restart() {
     this.stop();
     this.frame = 0;
+    this.lastTimestamp = 0;
+    this.accumulatedMs = this.tickIntervalMs;
+    this.runTimestamp = performance.now();
+
+    // Recreate plugin state while preserving current parameter values.
+    this.initializePlugin({ useDefaults: false, rerenderHud: false });
     this.clearCanvas();
 
     if (typeof this.plugin.restart === "function") {
@@ -337,6 +357,11 @@ export class GenSynthEngine {
       const value = this.paramValues[def.key];
       if (def.type === "range") {
         result[def.key] = value.current;
+      } else if (def.type === "bounds") {
+        result[def.key] = {
+          min: value.min,
+          max: value.max,
+        };
       } else {
         result[def.key] = value;
       }
@@ -442,6 +467,60 @@ export class GenSynthEngine {
         continue;
       }
 
+      if (raw.type === "bounds") {
+        const min = resolveBound(raw.min, limits, 0);
+        const maxCandidate = resolveBound(raw.max, limits, min);
+        const max = maxCandidate < min ? min : maxCandidate;
+        const step = raw.step > 0 ? raw.step : DEFAULT_STEP;
+
+        const rawDefault = typeof raw.default === "function"
+          ? raw.default(limits)
+          : raw.default;
+
+        let defaultMin = min;
+        let defaultMax = max;
+
+        if (isRangeDefaultObject(rawDefault)) {
+          if (Number.isFinite(rawDefault.min)) {
+            defaultMin = toNumber(rawDefault.min, min);
+          }
+          if (Number.isFinite(rawDefault.max)) {
+            defaultMax = toNumber(rawDefault.max, max);
+          }
+          if (defaultMax < defaultMin) {
+            defaultMax = defaultMin;
+          }
+        }
+
+        const resolved = {
+          type: "bounds",
+          key: raw.key,
+          label: raw.label ?? raw.key,
+          min,
+          max,
+          step,
+          defaultMin,
+          defaultMax,
+        };
+
+        nextDefs.set(resolved.key, resolved);
+
+        if (useDefaults || !isBoundsValue(this.paramValues[resolved.key])) {
+          this.paramValues[resolved.key] = this.normalizeBoundsPair(resolved, {
+            min: defaultMin,
+            max: defaultMax,
+          });
+          continue;
+        }
+
+        this.paramValues[resolved.key] = this.normalizeBoundsPair(
+          resolved,
+          this.paramValues[resolved.key],
+        );
+
+        continue;
+      }
+
       const min = resolveBound(raw.min, limits, 0);
       const maxCandidate = resolveBound(raw.max, limits, min);
       const max = maxCandidate < min ? min : maxCandidate;
@@ -477,6 +556,23 @@ export class GenSynthEngine {
     }
 
     this.paramDefs = nextDefs;
+  }
+
+  normalizeBoundsPair(def, value) {
+    let minValue = clampNumber(toNumber(value.min, def.defaultMin), def.min, def.max);
+    let maxValue = clampNumber(toNumber(value.max, def.defaultMax), def.min, def.max);
+
+    minValue = this.snapRangeValue(def, minValue);
+    maxValue = this.snapRangeValue(def, maxValue);
+
+    if (maxValue < minValue) {
+      maxValue = minValue;
+    }
+
+    return {
+      min: minValue,
+      max: maxValue,
+    };
   }
 
   normalizeRangeTriplet(def, value) {
@@ -658,13 +754,16 @@ export class GenSynthEngine {
       const row = document.createElement("div");
       row.className = "param-row";
 
-      if (def.type === "range") {
+      if (def.type === "range" || def.type === "bounds") {
         const label = document.createElement("div");
         label.className = "param-label";
         label.textContent = def.label;
 
         const triControl = document.createElement("div");
         triControl.className = "tri-control";
+        if (def.type === "bounds") {
+          triControl.classList.add("tri-control-bounds");
+        }
         triControl.addEventListener("pointerenter", (event) => {
           this.updateTooltipForPointer(def.key, event.clientX, event.clientY);
         });
@@ -684,20 +783,29 @@ export class GenSynthEngine {
         });
 
         const minHandle = this.createRangeHandle(def.key, "min", `${def.label} minimum`);
-        const currentHandle = this.createRangeHandle(def.key, "current", `${def.label} current`);
         const maxHandle = this.createRangeHandle(def.key, "max", `${def.label} maximum`);
+        track.append(minHandle, maxHandle);
 
-        track.append(minHandle, maxHandle, currentHandle);
+        let currentHandle = null;
+        if (def.type === "range") {
+          currentHandle = this.createRangeHandle(def.key, "current", `${def.label} current`);
+          track.append(currentHandle);
+        }
 
         const tooltip = document.createElement("div");
         tooltip.className = "tri-tooltip";
         tooltip.textContent = "";
 
-        const functionBtn = this.createFunctionButton(def.key, def.label);
-
         const controlRow = document.createElement("div");
-        controlRow.className = "param-control-row";
-        controlRow.append(functionBtn, triControl);
+        if (def.type === "range") {
+          const functionBtn = this.createFunctionButton(def.key, def.label);
+          controlRow.className = "param-control-row";
+          controlRow.append(functionBtn, triControl);
+          this.rangeFunctionButtonEls.set(def.key, functionBtn);
+        } else {
+          controlRow.className = "param-control-row param-control-row-bounds";
+          controlRow.append(triControl);
+        }
 
         triControl.append(track, tooltip);
         row.append(label, controlRow);
@@ -713,7 +821,6 @@ export class GenSynthEngine {
           lastTooltipX: null,
           lastTooltipY: null,
         });
-        this.rangeFunctionButtonEls.set(def.key, functionBtn);
         continue;
       }
 
@@ -764,38 +871,47 @@ export class GenSynthEngine {
   pickClosestRangeBound(key, clientX) {
     const def = this.paramDefs.get(key);
     const controls = this.rangeControlEls.get(key);
-    if (!def || def.type !== "range" || !controls) {
+    if (!def || (def.type !== "range" && def.type !== "bounds") || !controls) {
       return "current";
     }
 
     const rect = controls.track.getBoundingClientRect();
     if (rect.width <= 0) {
-      return "current";
+      return def.type === "range" ? "current" : "min";
     }
 
     const x = clampNumber(clientX - rect.left, 0, rect.width);
     const value = this.paramValues[key];
 
-    const positions = {
-      min: this.valueToTrackX(def, value.min, rect.width),
-      current: this.valueToTrackX(def, value.current, rect.width),
-      max: this.valueToTrackX(def, value.max, rect.width),
-    };
+    const minPosition = this.valueToTrackX(def, value.min, rect.width);
+    const maxPosition = this.valueToTrackX(def, value.max, rect.width);
+
+    if (def.type === "bounds") {
+      return Math.abs(x - minPosition) <= Math.abs(x - maxPosition) ? "min" : "max";
+    }
+
+    const currentPosition = this.valueToTrackX(def, value.current, rect.width);
 
     if (
-      Math.abs(positions.min - positions.current) <= 2
-      && Math.abs(positions.max - positions.current) <= 2
+      Math.abs(minPosition - currentPosition) <= 2
+      && Math.abs(maxPosition - currentPosition) <= 2
     ) {
-      if (x < positions.current - 1) {
+      if (x < currentPosition - 1) {
         return "min";
       }
 
-      if (x > positions.current + 1) {
+      if (x > currentPosition + 1) {
         return "max";
       }
 
       return "current";
     }
+
+    const positions = {
+      min: minPosition,
+      current: currentPosition,
+      max: maxPosition,
+    };
 
     const candidates = ["current", "min", "max"];
     let best = "current";
@@ -838,7 +954,11 @@ export class GenSynthEngine {
 
   handleRangeKeydown(key, bound, event) {
     const def = this.paramDefs.get(key);
-    if (!def || def.type !== "range") {
+    if (!def || (def.type !== "range" && def.type !== "bounds")) {
+      return;
+    }
+
+    if (bound === "current" && def.type !== "range") {
       return;
     }
 
@@ -870,7 +990,11 @@ export class GenSynthEngine {
   dragRangeHandle(key, bound, clientX) {
     const def = this.paramDefs.get(key);
     const controls = this.rangeControlEls.get(key);
-    if (!def || def.type !== "range" || !controls) {
+    if (!def || (def.type !== "range" && def.type !== "bounds") || !controls) {
+      return;
+    }
+
+    if (bound === "current" && def.type !== "range") {
       return;
     }
 
@@ -888,23 +1012,29 @@ export class GenSynthEngine {
 
   updateRangeValue(key, bound, nextValue) {
     const def = this.paramDefs.get(key);
-    if (!def || def.type !== "range") {
+    if (!def || (def.type !== "range" && def.type !== "bounds")) {
+      return;
+    }
+
+    if (bound === "current" && def.type !== "range") {
       return;
     }
 
     const value = this.paramValues[key];
     const next = {
       min: value.min,
-      current: value.current,
       max: value.max,
     };
+    if (def.type === "range") {
+      next.current = value.current;
+    }
 
     if (bound === "min") {
       next.min = nextValue;
       if (next.min > next.max) {
         next.max = next.min;
       }
-      if (next.current < next.min) {
+      if (def.type === "range" && next.current < next.min) {
         next.current = next.min;
       }
     } else if (bound === "max") {
@@ -912,30 +1042,35 @@ export class GenSynthEngine {
       if (next.max < next.min) {
         next.min = next.max;
       }
-      if (next.current > next.max) {
+      if (def.type === "range" && next.current > next.max) {
         next.current = next.max;
       }
-    } else {
+    } else if (def.type === "range") {
       next.current = nextValue;
     }
 
-    this.paramValues[key] = this.normalizeRangeTriplet(def, next);
+    this.paramValues[key] = def.type === "range"
+      ? this.normalizeRangeTriplet(def, next)
+      : this.normalizeBoundsPair(def, next);
   }
 
   syncHudValues() {
     for (const def of this.paramDefs.values()) {
-      if (def.type === "range") {
+      if (def.type === "range" || def.type === "bounds") {
         const controls = this.rangeControlEls.get(def.key);
         if (controls) {
           const value = this.paramValues[def.key];
           const trackWidth = controls.track.clientWidth || controls.track.getBoundingClientRect().width;
 
           this.positionRangeHandle(def, controls.minHandle, "min", value.min, trackWidth);
-          this.positionRangeHandle(def, controls.currentHandle, "current", value.current, trackWidth);
           this.positionRangeHandle(def, controls.maxHandle, "max", value.max, trackWidth);
-          this.updateCurrentHandleClip(def, controls, value, trackWidth);
-
-          controls.tooltip.textContent = `range: ${formatValue(value.min, def.step)}-${formatValue(value.max, def.step)}\ncurrent: ${formatValue(value.current, def.step)}`;
+          if (def.type === "range" && controls.currentHandle) {
+            this.positionRangeHandle(def, controls.currentHandle, "current", value.current, trackWidth);
+            this.updateCurrentHandleClip(def, controls, value, trackWidth);
+            controls.tooltip.textContent = `range: ${formatValue(value.min, def.step)}-${formatValue(value.max, def.step)}\ncurrent: ${formatValue(value.current, def.step)}`;
+          } else {
+            controls.tooltip.textContent = `range: ${formatValue(value.min, def.step)}-${formatValue(value.max, def.step)}`;
+          }
 
           if (!Number.isFinite(controls.lastTooltipX) || !Number.isFinite(controls.lastTooltipY)) {
             const rect = controls.control.getBoundingClientRect();
@@ -983,6 +1118,10 @@ export class GenSynthEngine {
   }
 
   positionRangeHandle(def, handle, bound, value, trackWidth) {
+    if (!handle) {
+      return;
+    }
+
     const semanticX = this.valueToTrackX(def, value, trackWidth);
     const effectiveWidth = Math.max(0, trackWidth);
     const maxLeft = Math.max(0, effectiveWidth - RANGE_BOUND_HANDLE_THICKNESS_PX);
