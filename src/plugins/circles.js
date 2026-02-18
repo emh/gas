@@ -54,7 +54,7 @@ export const circlesPlugin = {
     const lineThickness = params.lineThickness;
     const opacity = clamp01(params.opacity);
 
-    const circlesPerFrame = 3;
+    const circlesPerFrame = 10;
 
     for (let i = 0; i < circlesPerFrame; i += 1) {
       const x = randomAroundCanvas(width, radius);

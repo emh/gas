@@ -261,6 +261,35 @@ export class GenSynthEngine {
     }
   }
 
+  setPlugin(plugin, { useDefaults = true, clear = true } = {}) {
+    if (!plugin || typeof plugin.init !== "function" || typeof plugin.run !== "function") {
+      throw new Error("Invalid plugin.");
+    }
+
+    if (plugin === this.plugin) {
+      return;
+    }
+
+    const wasRunning = this.running;
+    this.stop();
+
+    this.plugin = plugin;
+    this.frame = 0;
+    this.lastTimestamp = 0;
+    this.accumulatedMs = this.tickIntervalMs;
+    this.runTimestamp = performance.now();
+
+    if (clear) {
+      this.clearCanvas();
+    }
+
+    this.initializePlugin({ useDefaults, rerenderHud: true });
+
+    if (wasRunning) {
+      this.start();
+    }
+  }
+
   initializePlugin({ useDefaults, rerenderHud }) {
     const initResult = this.plugin.init(this.createInitContext());
     this.rawParamDefs = Array.isArray(initResult?.parameters)

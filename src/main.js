@@ -1,5 +1,6 @@
 import { GenSynthEngine } from "./engine.js";
 import { circlesPlugin } from "./plugins/circles.js";
+import { linesPlugin } from "./plugins/lines.js";
 
 const canvas = document.getElementById("stage");
 const paramsForm = document.getElementById("params-form");
@@ -23,11 +24,20 @@ const SPEED_OPTIONS = [1, 2, 4, 8, 16, 32];
 let paramsCollapsed = false;
 let speedIndex = 0;
 
-const option = document.createElement("option");
-option.value = circlesPlugin.id;
-option.textContent = circlesPlugin.name;
-algoSelect.append(option);
-algoSelect.value = circlesPlugin.id;
+const plugins = [
+  circlesPlugin,
+  linesPlugin,
+];
+const pluginsById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
+const defaultPlugin = circlesPlugin;
+
+for (const plugin of plugins) {
+  const option = document.createElement("option");
+  option.value = plugin.id;
+  option.textContent = plugin.name;
+  algoSelect.append(option);
+}
+algoSelect.value = defaultPlugin.id;
 
 function setRunUi(running) {
   if (!playPauseBtn) {
@@ -133,7 +143,7 @@ function downloadCanvasSnapshot() {
 const engine = new GenSynthEngine({
   canvas,
   paramsForm,
-  plugin: circlesPlugin,
+  plugin: defaultPlugin,
   onRunStateChange: (running) => {
     setRunUi(running);
   },
@@ -154,6 +164,15 @@ playPauseBtn?.addEventListener("click", () => {
 
 restartBtn.addEventListener("click", () => {
   engine.restart();
+});
+
+algoSelect?.addEventListener("change", () => {
+  const selected = pluginsById.get(algoSelect.value);
+  if (!selected) {
+    return;
+  }
+
+  engine.setPlugin(selected);
 });
 
 paramsToggleBtn?.addEventListener("click", () => {
