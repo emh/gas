@@ -1,3 +1,5 @@
+import { resolveInkStyle } from "./ink-params.js";
+
 function fract(value) {
   return value - Math.floor(value);
 }
@@ -210,8 +212,7 @@ export const spiralsPlugin = {
     const radialSpeed = params.radialSpeed;
     const directionDrift = params.directionDrift;
     const accelJitter = params.accelJitter;
-    const lineThickness = params.lineThickness;
-    const opacity = clamp(params.opacity, 0, 1);
+    const { lineThickness, strokeStyle } = resolveInkStyle(params);
     const thetaStep = BASE_THETA_STEP;// / tightness;
 
     ctx.beginPath();
@@ -251,7 +252,7 @@ export const spiralsPlugin = {
 
     ctx.lineWidth = lineThickness;
     ctx.lineCap = "butt";
-    ctx.strokeStyle = `rgba(0, 0, 0, ${opacity.toFixed(3)})`;
+    ctx.strokeStyle = strokeStyle;
     ctx.stroke();
   },
 };

@@ -1,3 +1,5 @@
+import { resolveInkStyle } from "./ink-params.js";
+
 function randomBetween(min, max) {
   return min + Math.random() * (max - min);
 }
@@ -85,8 +87,7 @@ export const linesPlugin = {
 
   run({ ctx, width, height, params }) {
     const lineLength = Math.max(0, params.lineLength);
-    const lineThickness = params.lineThickness;
-    const opacity = clamp01(params.opacity);
+    const { lineThickness, strokeStyle } = resolveInkStyle(params);
     const densityDirection = normalizeDegrees(params.densityDirection) * (Math.PI / 180);
     const linesPerCall = 10;
 
@@ -120,7 +121,7 @@ export const linesPlugin = {
       ctx.moveTo(lineCenterX - dx, lineCenterY - dy);
       ctx.lineTo(lineCenterX + dx, lineCenterY + dy);
       ctx.lineWidth = lineThickness;
-      ctx.strokeStyle = `rgba(0, 0, 0, ${opacity.toFixed(3)})`;
+      ctx.strokeStyle = strokeStyle;
       ctx.stroke();
     }
   },

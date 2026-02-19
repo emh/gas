@@ -1,9 +1,7 @@
+import { resolveInkStyle } from "./ink-params.js";
+
 function randomBetween(min, max) {
   return min + Math.random() * (max - min);
-}
-
-function clamp01(value) {
-  return Math.min(1, Math.max(0, value));
 }
 
 function randomAroundCanvas(dimension, radius) {
@@ -33,8 +31,7 @@ export const circlesPlugin = {
 
   run({ ctx, width, height, params }) {
     const radius = params.radius;
-    const lineThickness = params.lineThickness;
-    const opacity = clamp01(params.opacity);
+    const { lineThickness, strokeStyle } = resolveInkStyle(params);
 
     const circlesPerFrame = 10;
 
@@ -45,7 +42,7 @@ export const circlesPlugin = {
       ctx.beginPath();
       ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.lineWidth = lineThickness;
-      ctx.strokeStyle = `rgba(0, 0, 0, ${opacity.toFixed(3)})`;
+      ctx.strokeStyle = strokeStyle;
       ctx.stroke();
     }
   },

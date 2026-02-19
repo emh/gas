@@ -10,6 +10,8 @@ const MAX_STEPS_PER_FRAME = 120;
 const PARAM_NOISE_SPEEDS = [0, 0.001, 0.005, 0.01, 0.1, 0.5];
 const DEFAULT_PARAM_NOISE_SPEED_INDEX = 0;
 const PARAM_NOISE_DOMAIN_STEP = 127.91831;
+const INK_SWATCH_KEYS = new Set(["hue", "saturation", "lightness"]);
+const SHARED_INK_PARAM_KEYS = new Set(INK_PARAMETER_DEFS.map((def) => def.key));
 
 function fract(value) {
   return value - Math.floor(value);
@@ -334,14 +336,18 @@ export class GenSynthEngine {
       this.clearCanvas();
     }
 
-    this.initializePlugin({ useDefaults, rerenderHud: true });
+    this.initializePlugin({
+      useDefaults,
+      rerenderHud: true,
+      preserveParamKeys: useDefaults ? SHARED_INK_PARAM_KEYS : null,
+    });
 
     if (wasRunning) {
       this.start();
     }
   }
 
-  initializePlugin({ useDefaults, rerenderHud }) {
+  initializePlugin({ useDefaults, rerenderHud, preserveParamKeys = null }) {
     const initResult = this.plugin.init(this.createInitContext());
     const pluginParamDefs = Array.isArray(initResult?.parameters)
       ? initResult.parameters
@@ -349,7 +355,7 @@ export class GenSynthEngine {
     this.rawParamDefs = [...pluginParamDefs, ...INK_PARAMETER_DEFS];
     this.pluginState = initResult?.state ?? {};
 
-    this.resolveParamDefs({ useDefaults });
+    this.resolveParamDefs({ useDefaults, preserveParamKeys });
     this.normalizeFunctionStates();
 
     if (rerenderHud) {
@@ -425,7 +431,7 @@ export class GenSynthEngine {
     this.ctx.lineJoin = "round";
   }
 
-  resolveParamDefs({ useDefaults }) {
+  resolveParamDefs({ useDefaults, preserveParamKeys = null }) {
     const limits = this.limitContext();
     const nextDefs = new Map();
 
@@ -486,8 +492,9 @@ export class GenSynthEngine {
         };
 
         nextDefs.set(resolved.key, resolved);
+        const preserveValue = useDefaults && preserveParamKeys?.has(resolved.key);
 
-        if (useDefaults || !isRangeValue(this.paramValues[resolved.key])) {
+        if ((useDefaults && !preserveValue) || !isRangeValue(this.paramValues[resolved.key])) {
           this.paramValues[resolved.key] = this.normalizeRangeTriplet(resolved, {
             min: defaultMin,
             current: defaultCurrent,
@@ -542,8 +549,9 @@ export class GenSynthEngine {
         };
 
         nextDefs.set(resolved.key, resolved);
+        const preserveValue = useDefaults && preserveParamKeys?.has(resolved.key);
 
-        if (useDefaults || !isBoundsValue(this.paramValues[resolved.key])) {
+        if ((useDefaults && !preserveValue) || !isBoundsValue(this.paramValues[resolved.key])) {
           this.paramValues[resolved.key] = this.normalizeBoundsPair(resolved, {
             min: defaultMin,
             max: defaultMax,
@@ -579,8 +587,9 @@ export class GenSynthEngine {
       };
 
       nextDefs.set(resolved.key, resolved);
+      const preserveValue = useDefaults && preserveParamKeys?.has(resolved.key);
 
-      if (useDefaults || !(resolved.key in this.paramValues)) {
+      if ((useDefaults && !preserveValue) || !(resolved.key in this.paramValues)) {
         this.paramValues[resolved.key] = defaultValue;
       } else {
         const current = toNumber(this.paramValues[resolved.key], defaultValue);
@@ -834,7 +843,21 @@ export class GenSynthEngine {
 
         const tooltip = document.createElement("div");
         tooltip.className = "tri-tooltip";
-        tooltip.textContent = "";
+        const tooltipText = document.createElement("div");
+        tooltipText.className = "tri-tooltip-text";
+
+        const tooltipSwatchRow = document.createElement("div");
+        tooltipSwatchRow.className = "tri-tooltip-swatch-row";
+        tooltipSwatchRow.hidden = true;
+
+        const tooltipSwatch = document.createElement("span");
+        tooltipSwatch.className = "tri-tooltip-swatch";
+
+        const tooltipSwatchLabel = document.createElement("span");
+        tooltipSwatchLabel.className = "tri-tooltip-swatch-label";
+
+        tooltipSwatchRow.append(tooltipSwatch, tooltipSwatchLabel);
+        tooltip.append(tooltipText, tooltipSwatchRow);
 
         const controlRow = document.createElement("div");
         if (def.type === "range") {
@@ -864,6 +887,10 @@ export class GenSynthEngine {
           currentHandle,
           maxHandle,
           tooltip,
+          tooltipText,
+          tooltipSwatchRow,
+          tooltipSwatch,
+          tooltipSwatchLabel,
           lastTooltipX: null,
           lastTooltipY: null,
         });
@@ -1112,12 +1139,22 @@ export class GenSynthEngine {
 
           this.positionRangeHandle(def, controls.minHandle, "min", value.min, trackWidth);
           this.positionRangeHandle(def, controls.maxHandle, "max", value.max, trackWidth);
+          let tooltipText = `range: ${formatValue(value.min, def.step)}-${formatValue(value.max, def.step)}`;
           if (def.type === "range" && controls.currentHandle) {
             this.positionRangeHandle(def, controls.currentHandle, "current", value.current, trackWidth);
             this.updateCurrentHandleClip(def, controls, value, trackWidth);
-            controls.tooltip.textContent = `range: ${formatValue(value.min, def.step)}-${formatValue(value.max, def.step)}\ncurrent: ${formatValue(value.current, def.step)}`;
+            tooltipText = `${tooltipText}\ncurrent: ${formatValue(value.current, def.step)}`;
+          }
+          controls.tooltipText.textContent = tooltipText;
+
+          if (this.shouldShowInkSwatch(def)) {
+            const swatchColor = this.inkSwatchColor();
+            controls.tooltipSwatchRow.hidden = false;
+            controls.tooltipSwatch.style.background = swatchColor;
+            controls.tooltipSwatchLabel.textContent = swatchColor;
           } else {
-            controls.tooltip.textContent = `range: ${formatValue(value.min, def.step)}-${formatValue(value.max, def.step)}`;
+            controls.tooltipSwatchRow.hidden = true;
+            controls.tooltipSwatchLabel.textContent = "";
           }
 
           if (!Number.isFinite(controls.lastTooltipX) || !Number.isFinite(controls.lastTooltipY)) {
@@ -1218,6 +1255,26 @@ export class GenSynthEngine {
     const rightClip = clampNumber(circleRight - rightBound, 0, diameter);
 
     currentHandle.style.clipPath = `inset(0 ${rightClip}px 0 ${leftClip}px)`;
+  }
+
+  shouldShowInkSwatch(def) {
+    return def.group === "ink" && INK_SWATCH_KEYS.has(def.key);
+  }
+
+  getRangeCurrentValue(key, fallback) {
+    const value = this.paramValues[key];
+    if (isRangeValue(value)) {
+      return value.current;
+    }
+
+    return fallback;
+  }
+
+  inkSwatchColor() {
+    const hue = clampNumber(this.getRangeCurrentValue("hue", 0), 0, 360);
+    const saturation = clampNumber(this.getRangeCurrentValue("saturation", 0), 0, 100);
+    const lightness = clampNumber(this.getRangeCurrentValue("lightness", 0), 0, 100);
+    return `hsl(${Math.round(hue)}, ${Math.round(saturation)}%, ${Math.round(lightness)}%)`;
   }
 
   updateTooltipForPointer(key, clientX, clientY) {
