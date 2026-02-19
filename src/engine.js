@@ -1,3 +1,5 @@
+import { INK_PARAMETER_DEFS } from "./plugins/ink-params.js";
+
 const DEFAULT_STEP = 1;
 const RANGE_EDGE_PADDING_PX = 0;
 const RANGE_BOUND_HANDLE_THICKNESS_PX = 3;
@@ -341,9 +343,10 @@ export class GenSynthEngine {
 
   initializePlugin({ useDefaults, rerenderHud }) {
     const initResult = this.plugin.init(this.createInitContext());
-    this.rawParamDefs = Array.isArray(initResult?.parameters)
+    const pluginParamDefs = Array.isArray(initResult?.parameters)
       ? initResult.parameters
       : [];
+    this.rawParamDefs = [...pluginParamDefs, ...INK_PARAMETER_DEFS];
     this.pluginState = initResult?.state ?? {};
 
     this.resolveParamDefs({ useDefaults });
@@ -430,6 +433,9 @@ export class GenSynthEngine {
       if (!raw?.key) {
         continue;
       }
+      const group = typeof raw.group === "string" && raw.group.length > 0
+        ? raw.group
+        : "algo";
 
       if (raw.type === "range") {
         const min = resolveBound(raw.min, limits, 0);
@@ -469,6 +475,7 @@ export class GenSynthEngine {
           type: "range",
           key: raw.key,
           label: raw.label ?? raw.key,
+          group,
           min,
           max,
           step,
@@ -526,6 +533,7 @@ export class GenSynthEngine {
           type: "bounds",
           key: raw.key,
           label: raw.label ?? raw.key,
+          group,
           min,
           max,
           step,
@@ -563,6 +571,7 @@ export class GenSynthEngine {
         type: "number",
         key: raw.key,
         label: raw.label ?? raw.key,
+        group,
         min,
         max,
         step,
@@ -772,8 +781,16 @@ export class GenSynthEngine {
     this.scalarInputEls.clear();
     this.rangeControlEls.clear();
     this.rangeFunctionButtonEls.clear();
+    let previousGroup = null;
 
     for (const def of this.paramDefs.values()) {
+      if (def.group === "ink" && previousGroup !== null && previousGroup !== "ink") {
+        const separator = document.createElement("div");
+        separator.className = "param-separator";
+        separator.setAttribute("aria-hidden", "true");
+        this.paramsForm.append(separator);
+      }
+
       const row = document.createElement("div");
       row.className = "param-row";
 
@@ -850,6 +867,7 @@ export class GenSynthEngine {
           lastTooltipX: null,
           lastTooltipY: null,
         });
+        previousGroup = def.group;
         continue;
       }
 
@@ -871,6 +889,7 @@ export class GenSynthEngine {
       this.paramsForm.append(row);
 
       this.scalarInputEls.set(def.key, input);
+      previousGroup = def.group;
     }
   }
 
