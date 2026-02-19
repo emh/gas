@@ -89,7 +89,6 @@ export const linesPlugin = {
     const lineLength = Math.max(0, params.lineLength);
     const { lineThickness, strokeStyle } = resolveInkStyle(params);
     const densityDirection = normalizeDegrees(params.densityDirection) * (Math.PI / 180);
-    const linesPerCall = 10;
 
     const axisX = Math.cos(densityDirection);
     const axisY = Math.sin(densityDirection);
@@ -100,29 +99,27 @@ export const linesPlugin = {
     const centerY = height * 0.5;
     const axisHalfLength = Math.hypot(width, height) * 0.5;
 
-    for (let i = 0; i < linesPerCall; i += 1) {
-      const weightedT = weightedUnitSample(params.startDensity, params.endDensity);
-      const axisOffset = (weightedT * 2 - 1) * axisHalfLength;
-      const perpendicularOffset = randomBetween(-axisHalfLength, axisHalfLength);
+    const weightedT = weightedUnitSample(params.startDensity, params.endDensity);
+    const axisOffset = (weightedT * 2 - 1) * axisHalfLength;
+    const perpendicularOffset = randomBetween(-axisHalfLength, axisHalfLength);
 
-      const lineCenterX = centerX
-        + axisX * axisOffset
-        + perpendicularX * perpendicularOffset;
-      const lineCenterY = centerY
-        + axisY * axisOffset
-        + perpendicularY * perpendicularOffset;
+    const lineCenterX = centerX
+      + axisX * axisOffset
+      + perpendicularX * perpendicularOffset;
+    const lineCenterY = centerY
+      + axisY * axisOffset
+      + perpendicularY * perpendicularOffset;
 
-      const lineDirection = randomBetween(0, Math.PI * 2);
-      const halfLength = lineLength * 0.5;
-      const dx = Math.cos(lineDirection) * halfLength;
-      const dy = Math.sin(lineDirection) * halfLength;
+    const lineDirection = randomBetween(0, Math.PI * 2);
+    const halfLength = lineLength * 0.5;
+    const dx = Math.cos(lineDirection) * halfLength;
+    const dy = Math.sin(lineDirection) * halfLength;
 
-      ctx.beginPath();
-      ctx.moveTo(lineCenterX - dx, lineCenterY - dy);
-      ctx.lineTo(lineCenterX + dx, lineCenterY + dy);
-      ctx.lineWidth = lineThickness;
-      ctx.strokeStyle = strokeStyle;
-      ctx.stroke();
-    }
+    ctx.beginPath();
+    ctx.moveTo(lineCenterX - dx, lineCenterY - dy);
+    ctx.lineTo(lineCenterX + dx, lineCenterY + dy);
+    ctx.lineWidth = lineThickness;
+    ctx.strokeStyle = strokeStyle;
+    ctx.stroke();
   },
 };

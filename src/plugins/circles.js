@@ -32,18 +32,13 @@ export const circlesPlugin = {
   run({ ctx, width, height, params }) {
     const radius = params.radius;
     const { lineThickness, strokeStyle } = resolveInkStyle(params);
+    const x = randomAroundCanvas(width, radius);
+    const y = randomAroundCanvas(height, radius);
 
-    const circlesPerFrame = 10;
-
-    for (let i = 0; i < circlesPerFrame; i += 1) {
-      const x = randomAroundCanvas(width, radius);
-      const y = randomAroundCanvas(height, radius);
-
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.lineWidth = lineThickness;
-      ctx.strokeStyle = strokeStyle;
-      ctx.stroke();
-    }
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.lineWidth = lineThickness;
+    ctx.strokeStyle = strokeStyle;
+    ctx.stroke();
   },
 };

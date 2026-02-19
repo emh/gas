@@ -43,8 +43,10 @@ function polarToXY(centerX, centerY, angleRadians, radius) {
   };
 }
 
-const BASE_THETA_STEP = 0.1;
-const ACCEL_MAG_BASE = 0.03;
+const MIN_TURN_RADIANS_PER_RUN = Math.PI / 2;
+const SPIRAL_SEGMENTS_PER_RUN = 36;
+const THETA_STEP = MIN_TURN_RADIANS_PER_RUN / SPIRAL_SEGMENTS_PER_RUN;
+const ACCEL_MAG_BASE = 0.01;
 const ACCEL_MAG_NOISE_SPEED = 0.01;
 const FRICTION = 0.985;
 const VELOCITY_MAX = 6;
@@ -52,7 +54,6 @@ const BOUNCE_LOSS = 0.85;
 const EDGE_PAD = 60;
 const EDGE_PUSH = 0.055;
 const OUTSIDE_FACTOR = 2;
-const SEGMENTS_PER_CALL = 10;
 const NOISE_DOMAIN_ACCEL_DIR_X = 10.123;
 const NOISE_DOMAIN_ACCEL_DIR_Y = 99.321;
 const NOISE_DOMAIN_ACCEL_MAGNITUDE = 777.777;
@@ -213,11 +214,10 @@ export const spiralsPlugin = {
     const directionDrift = params.directionDrift;
     const accelJitter = params.accelJitter;
     const { lineThickness, strokeStyle } = resolveInkStyle(params);
-    const thetaStep = BASE_THETA_STEP;// / tightness;
 
     ctx.beginPath();
 
-    for (let i = 0; i < SEGMENTS_PER_CALL; i += 1) {
+    for (let i = 0; i < SPIRAL_SEGMENTS_PER_RUN; i += 1) {
       state.t += 1;
 
       const radiusNowNoise = noise1(state.t * radialSpeed + NOISE_DOMAIN_RADIUS);
@@ -231,7 +231,7 @@ export const spiralsPlugin = {
         accelJitter,
       });
 
-      state.thetaAngleUnwrapped += thetaStep;
+      state.thetaAngleUnwrapped += THETA_STEP;
       const angleEnd = normalizeAngleRadians(state.thetaAngleUnwrapped);
 
       const thetaRadialNow = radiusNow / tightness;

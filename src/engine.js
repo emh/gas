@@ -5,8 +5,8 @@ const RANGE_EDGE_PADDING_PX = 0;
 const RANGE_BOUND_HANDLE_THICKNESS_PX = 3;
 const RANGE_CURRENT_HANDLE_DIAMETER_PX = 14;
 const RANGE_INTER_HANDLE_MARGIN_PX = 0;
-const BASE_CALLS_PER_SECOND = 1;
-const MAX_STEPS_PER_FRAME = 120;
+const BASE_ITERATIONS_PER_SECOND = 5;
+const MAX_RUNS_PER_FRAME = 120;
 const PARAM_NOISE_SPEEDS = [0, 0.001, 0.005, 0.01, 0.1, 0.5];
 const DEFAULT_PARAM_NOISE_SPEED_INDEX = 0;
 const PARAM_NOISE_DOMAIN_STEP = 127.91831;
@@ -159,10 +159,9 @@ export class GenSynthEngine {
     this.frame = 0;
     this.rafId = 0;
     this.lastTimestamp = 0;
-    this.accumulatedMs = 0;
+    this.accumulatedIterations = 0;
     this.runTimestamp = 0;
     this.playbackMultiplier = 1;
-    this.tickIntervalMs = 1000 / BASE_CALLS_PER_SECOND;
 
     this.width = 1;
     this.height = 1;
@@ -198,7 +197,7 @@ export class GenSynthEngine {
 
     this.running = true;
     this.lastTimestamp = 0;
-    this.accumulatedMs = this.tickIntervalMs;
+    this.accumulatedIterations = 1;
     this.runTimestamp = performance.now();
     this.setStatus("Running");
     this.onRunStateChange(true);
@@ -224,7 +223,7 @@ export class GenSynthEngine {
     this.stop();
     this.frame = 0;
     this.lastTimestamp = 0;
-    this.accumulatedMs = this.tickIntervalMs;
+    this.accumulatedIterations = 1;
     this.runTimestamp = performance.now();
 
     // Recreate plugin state while preserving current parameter values.
@@ -255,23 +254,25 @@ export class GenSynthEngine {
     const deltaMs = Math.max(0, timestamp - this.lastTimestamp);
     this.lastTimestamp = timestamp;
 
-    this.accumulatedMs += deltaMs;
+    const iterationsPerSecond = BASE_ITERATIONS_PER_SECOND * this.playbackMultiplier;
+    const runDeltaMs = 1000 / iterationsPerSecond;
+    this.accumulatedIterations += (deltaMs / 1000) * iterationsPerSecond;
 
-    let steps = 0;
+    let runs = 0;
     let paramsChanged = false;
-    while (this.accumulatedMs >= this.tickIntervalMs && steps < MAX_STEPS_PER_FRAME) {
-      this.accumulatedMs -= this.tickIntervalMs;
-      this.runTimestamp += this.tickIntervalMs;
+    while (this.accumulatedIterations >= 1 && runs < MAX_RUNS_PER_FRAME) {
+      this.accumulatedIterations -= 1;
+      this.runTimestamp += runDeltaMs;
       if (this.applyParameterFunctions()) {
         paramsChanged = true;
       }
-      this.plugin.run(this.createRunContext(this.runTimestamp, this.tickIntervalMs));
+      this.plugin.run(this.createRunContext(this.runTimestamp, runDeltaMs));
       this.frame += 1;
-      steps += 1;
+      runs += 1;
     }
 
-    if (steps === MAX_STEPS_PER_FRAME && this.accumulatedMs > this.tickIntervalMs) {
-      this.accumulatedMs = this.tickIntervalMs;
+    if (runs === MAX_RUNS_PER_FRAME && this.accumulatedIterations > 1) {
+      this.accumulatedIterations = 1;
     }
 
     if (paramsChanged) {
@@ -294,7 +295,7 @@ export class GenSynthEngine {
 
     if (this.running) {
       this.lastTimestamp = 0;
-      this.accumulatedMs = this.tickIntervalMs;
+      this.accumulatedIterations = 1;
     }
   }
 
@@ -304,14 +305,7 @@ export class GenSynthEngine {
       return;
     }
 
-    const previousInterval = this.tickIntervalMs;
     this.playbackMultiplier = nextMultiplier;
-    this.tickIntervalMs = 1000 / (BASE_CALLS_PER_SECOND * this.playbackMultiplier);
-
-    if (previousInterval > 0) {
-      const progress = this.accumulatedMs / previousInterval;
-      this.accumulatedMs = clampNumber(progress * this.tickIntervalMs, 0, this.tickIntervalMs);
-    }
   }
 
   setPlugin(plugin, { useDefaults = true, clear = true } = {}) {
@@ -329,7 +323,7 @@ export class GenSynthEngine {
     this.plugin = plugin;
     this.frame = 0;
     this.lastTimestamp = 0;
-    this.accumulatedMs = this.tickIntervalMs;
+    this.accumulatedIterations = 1;
     this.runTimestamp = performance.now();
 
     if (clear) {
