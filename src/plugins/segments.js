@@ -390,27 +390,36 @@ function ensureRegionListHasRoot(state, width, height) {
   }
 }
 
-function popRegionBySelectionWeight(regions) {
+function popRegionBySelectionWeight(regions, uniformity) {
   if (regions.length === 0) {
     return null;
   }
 
+  const uniformityClamped = clamp01(Number(uniformity) || 0);
+  const eligibleFraction = 1 - 0.9 * uniformityClamped;
+  const eligibleCount = Math.max(1, Math.ceil(regions.length * eligibleFraction));
+  const eligibleIndices = regions
+    .map((region, index) => ({ index, area: region.area }))
+    .sort((a, b) => b.area - a.area)
+    .slice(0, eligibleCount)
+    .map((entry) => entry.index);
+
   let totalWeight = 0;
-  for (const region of regions) {
-    totalWeight += Math.max(0, Number(region.selectionWeight) || 0);
+  for (const index of eligibleIndices) {
+    totalWeight += Math.max(0, Number(regions[index].selectionWeight) || 0);
   }
 
-  let index = 0;
+  let index = eligibleIndices[0];
   if (!(totalWeight > 0)) {
-    index = Math.floor(Math.random() * regions.length);
+    index = eligibleIndices[Math.floor(Math.random() * eligibleIndices.length)];
   } else {
     let threshold = Math.random() * totalWeight;
-    index = regions.length - 1;
+    index = eligibleIndices[eligibleIndices.length - 1];
 
-    for (let i = 0; i < regions.length; i += 1) {
-      threshold -= Math.max(0, Number(regions[i].selectionWeight) || 0);
+    for (const candidateIndex of eligibleIndices) {
+      threshold -= Math.max(0, Number(regions[candidateIndex].selectionWeight) || 0);
       if (threshold <= 0) {
-        index = i;
+        index = candidateIndex;
         break;
       }
     }
@@ -475,6 +484,16 @@ export const segmentsPlugin = {
           step: 0.01,
           allowFunction: false,
         },
+        {
+          type: "range",
+          key: "uniformity",
+          label: "Uniformity",
+          min: 0,
+          max: 1,
+          default: 0.5,
+          step: 0.01,
+          allowFunction: false,
+        },
       ],
       state: {
         regions,
@@ -491,7 +510,7 @@ export const segmentsPlugin = {
     let tries = 0;
 
     while (state.regions.length > 0 && tries < MAX_REGION_ATTEMPTS_PER_RUN) {
-      const candidateRegion = popRegionBySelectionWeight(state.regions);
+      const candidateRegion = popRegionBySelectionWeight(state.regions, params.uniformity);
       if (!candidateRegion) {
         break;
       }
