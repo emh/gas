@@ -1,6 +1,7 @@
 import { GenSynthEngine } from "./engine.js";
 import { circlesPlugin } from "./plugins/circles.js";
 import { linesPlugin } from "./plugins/lines.js";
+import { segmentsPlugin } from "./plugins/segments.js";
 import { spiralsPlugin } from "./plugins/spirals.js";
 import { squigglesPlugin } from "./plugins/squiggles.js";
 
@@ -29,6 +30,7 @@ let speedIndex = 0;
 const plugins = [
   circlesPlugin,
   linesPlugin,
+  segmentsPlugin,
   spiralsPlugin,
   squigglesPlugin,
 ];
