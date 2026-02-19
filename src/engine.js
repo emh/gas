@@ -5,20 +5,32 @@ const RANGE_CURRENT_HANDLE_DIAMETER_PX = 14;
 const RANGE_INTER_HANDLE_MARGIN_PX = 0;
 const BASE_CALLS_PER_SECOND = 1;
 const MAX_STEPS_PER_FRAME = 120;
-const FUNCTION_MODES = ["none", "wave", "noise"];
-const WAVE_PHASE_STEP = (2 * Math.PI) / 64;
-const NOISE_FOLLOW_FACTOR = 0.2;
-const FUNCTION_MODE_ICON_PATHS = {
-  none: [
-    "M5 12h14",
-  ],
-  wave: [
-    "M2 13a2 2 0 0 0 2-2V7a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0V4a2 2 0 0 1 4 0v13a2 2 0 0 0 4 0v-4a2 2 0 0 1 2-2"
-  ],
-  noise: [
-    "M7 3.5c5-2 7 2.5 3 4C1.5 10 2 15 5 16c5 2 9-10 14-7s.5 13.5-4 12c-5-2.5.5-11 6-2",
-  ],
-};
+const PARAM_NOISE_SPEEDS = [0, 0.001, 0.005, 0.01, 0.1, 0.5];
+const DEFAULT_PARAM_NOISE_SPEED_INDEX = 0;
+const PARAM_NOISE_DOMAIN_STEP = 127.91831;
+
+function fract(value) {
+  return value - Math.floor(value);
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function smoothstep(t) {
+  return t * t * (3 - 2 * t);
+}
+
+function hash1(index) {
+  return fract(Math.sin(index * 127.1) * 43758.5453123);
+}
+
+function noise1(value) {
+  const i0 = Math.floor(value);
+  const i1 = i0 + 1;
+  const t = smoothstep(fract(value));
+  return lerp(hash1(i0), hash1(i1), t);
+}
 
 function toNumber(value, fallback) {
   const parsed = Number(value);
@@ -51,12 +63,28 @@ function formatValue(value, step) {
     .replace(/\.0+$/u, "");
 }
 
-function clampNumber(value, min, max) {
-  return Math.min(max, Math.max(min, value));
+function formatNoiseSpeed(speed) {
+  if (speed === 0) {
+    return "0";
+  }
+
+  return speed
+    .toFixed(3)
+    .replace(/(\.\d*?[1-9])0+$/u, "$1")
+    .replace(/\.0+$/u, "");
 }
 
-function randomBetween(min, max) {
-  return min + Math.random() * (max - min);
+function normalizeIndex(index, length) {
+  if (length <= 0) {
+    return 0;
+  }
+
+  const parsed = Number.isFinite(index) ? Math.trunc(index) : 0;
+  return ((parsed % length) + length) % length;
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function snapToStep(value, min, step) {
@@ -98,7 +126,7 @@ function isRangeDefaultObject(value) {
  *
  * Parameter definition:
  * - Number: { key, label?, min, max, default, step? }
- * - Range: { type: "range", key, label?, min, max, default, step? }
+ * - Range: { type: "range", key, label?, min, max, default, step?, allowFunction? }
  * - Bounds: { type: "bounds", key, label?, min, max, default?, step? }
  *
  * Range default behavior:
@@ -143,6 +171,7 @@ export class GenSynthEngine {
     this.rangeControlEls = new Map();
     this.rangeFunctionButtonEls = new Map();
     this.paramFunctionStates = new Map();
+    this.nextNoiseDomainSeed = 1;
 
     this.pluginState = {};
 
@@ -443,6 +472,7 @@ export class GenSynthEngine {
           min,
           max,
           step,
+          allowFunction: raw.allowFunction !== false,
           defaultMin,
           defaultCurrent,
           defaultMax,
@@ -607,25 +637,43 @@ export class GenSynthEngine {
     return clampNumber(snapped, def.min, def.max);
   }
 
+  createNoiseDomain() {
+    const domain = this.nextNoiseDomainSeed * PARAM_NOISE_DOMAIN_STEP;
+    this.nextNoiseDomainSeed += 1;
+    return domain;
+  }
+
+  normalizeNoiseSpeedIndex(index) {
+    return normalizeIndex(index, PARAM_NOISE_SPEEDS.length);
+  }
+
+  isRangeFunctionEnabled(def) {
+    return def?.type === "range" && def.allowFunction !== false;
+  }
+
   normalizeFunctionStates() {
     const nextStates = new Map();
+    const usedDomains = new Set();
 
     for (const def of this.paramDefs.values()) {
-      if (def.type !== "range") {
+      if (!this.isRangeFunctionEnabled(def)) {
         continue;
       }
 
       const current = this.paramFunctionStates.get(def.key);
-      const mode = FUNCTION_MODES.includes(current?.mode) ? current.mode : "none";
-      const phase = Number.isFinite(current?.phase) ? current.phase : 0;
-      const noiseTarget = Number.isFinite(current?.noiseTarget)
-        ? clampNumber(current.noiseTarget, def.min, def.max)
-        : (def.min + def.max) / 2;
+      const noiseSpeedIndex = this.normalizeNoiseSpeedIndex(current?.noiseSpeedIndex);
+      let noiseDomain = Number.isFinite(current?.noiseDomain)
+        ? current.noiseDomain
+        : this.createNoiseDomain();
+
+      while (usedDomains.has(noiseDomain)) {
+        noiseDomain = this.createNoiseDomain();
+      }
+      usedDomains.add(noiseDomain);
 
       nextStates.set(def.key, {
-        mode,
-        phase,
-        noiseTarget,
+        noiseSpeedIndex,
+        noiseDomain,
       });
     }
 
@@ -638,40 +686,24 @@ export class GenSynthEngine {
     button.className = "param-fn-btn";
     button.dataset.key = key;
     button.addEventListener("click", () => {
-      this.cycleParamFunctionMode(key);
+      this.cycleParamNoiseSpeed(key);
     });
     this.updateFunctionButtonUi(key, button, label);
     return button;
   }
 
-  cycleParamFunctionMode(key) {
+  cycleParamNoiseSpeed(key) {
     const def = this.paramDefs.get(key);
-    if (!def || def.type !== "range") {
+    if (!this.isRangeFunctionEnabled(def)) {
       return;
     }
 
     const current = this.paramFunctionStates.get(key) ?? {
-      mode: "none",
-      phase: 0,
-      noiseTarget: (def.min + def.max) / 2,
+      noiseSpeedIndex: DEFAULT_PARAM_NOISE_SPEED_INDEX,
+      noiseDomain: this.createNoiseDomain(),
     };
 
-    const currentIndex = FUNCTION_MODES.indexOf(current.mode);
-    const nextMode = FUNCTION_MODES[(currentIndex + 1) % FUNCTION_MODES.length];
-
-    const value = this.paramValues[key];
-    if (nextMode === "wave") {
-      const amplitude = (value.max - value.min) / 2;
-      const midpoint = value.min + amplitude;
-      const normalized = amplitude > 0
-        ? clampNumber((value.current - midpoint) / amplitude, -1, 1)
-        : 0;
-      current.phase = Math.asin(normalized);
-    } else if (nextMode === "noise") {
-      current.noiseTarget = randomBetween(value.min, value.max);
-    }
-
-    current.mode = nextMode;
+    current.noiseSpeedIndex = this.normalizeNoiseSpeedIndex(current.noiseSpeedIndex + 1);
     this.paramFunctionStates.set(key, current);
     this.updateFunctionButtonUi(key, this.rangeFunctionButtonEls.get(key), def.label);
     this.syncHudValues();
@@ -682,53 +714,44 @@ export class GenSynthEngine {
       return;
     }
 
-    const state = this.paramFunctionStates.get(key) ?? { mode: "none" };
-    const modeLabel = state.mode;
-    if (button.dataset.mode !== modeLabel) {
-      const iconPaths = FUNCTION_MODE_ICON_PATHS[modeLabel] ?? FUNCTION_MODE_ICON_PATHS.none;
-      const iconMarkup = iconPaths.map((d) => `<path d="${d}" />`).join("");
-      button.innerHTML = `<svg class="param-fn-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${iconMarkup}</svg>`;
-      button.dataset.mode = modeLabel;
-    }
-    button.classList.toggle("is-active", modeLabel !== "none");
-    button.setAttribute("aria-label", `${label} f(x) = ${modeLabel}`);
-    button.title = `f(x) = ${modeLabel}`;
+    const state = this.paramFunctionStates.get(key) ?? {
+      noiseSpeedIndex: DEFAULT_PARAM_NOISE_SPEED_INDEX,
+      noiseDomain: 0,
+    };
+    const noiseSpeed = PARAM_NOISE_SPEEDS[this.normalizeNoiseSpeedIndex(state.noiseSpeedIndex)];
+    const speedLabel = formatNoiseSpeed(noiseSpeed);
+    button.textContent = speedLabel;
+    button.classList.toggle("is-active", noiseSpeed > 0);
+    button.dataset.speed = speedLabel;
+    button.setAttribute("aria-label", `${label} noise speed ${speedLabel}`);
+    button.title = `noise speed ${speedLabel}`;
   }
 
   applyParameterFunctions() {
     let changed = false;
 
     for (const def of this.paramDefs.values()) {
-      if (def.type !== "range") {
+      if (!this.isRangeFunctionEnabled(def)) {
         continue;
       }
 
       const state = this.paramFunctionStates.get(def.key);
-      if (!state || state.mode === "none") {
+      if (!state) {
         continue;
       }
 
-      const value = this.paramValues[def.key];
-      let nextCurrent = value.current;
-
-      if (state.mode === "wave") {
-        const amplitude = (value.max - value.min) / 2;
-        const midpoint = value.min + amplitude;
-        state.phase += WAVE_PHASE_STEP;
-        state.phase %= 2 * Math.PI;
-        nextCurrent = midpoint + Math.sin(state.phase) * amplitude;
-      } else if (state.mode === "noise") {
-        if (!Number.isFinite(state.noiseTarget) || state.noiseTarget < value.min || state.noiseTarget > value.max) {
-          state.noiseTarget = randomBetween(value.min, value.max);
-        }
-
-        nextCurrent = value.current + (state.noiseTarget - value.current) * NOISE_FOLLOW_FACTOR;
-
-        const epsilon = Math.max(def.step, (value.max - value.min) * 0.02);
-        if (Math.abs(nextCurrent - state.noiseTarget) <= epsilon) {
-          state.noiseTarget = randomBetween(value.min, value.max);
-        }
+      const noiseSpeed = PARAM_NOISE_SPEEDS[this.normalizeNoiseSpeedIndex(state.noiseSpeedIndex)];
+      if (!(noiseSpeed > 0)) {
+        continue;
       }
+
+      if (!Number.isFinite(state.noiseDomain)) {
+        state.noiseDomain = this.createNoiseDomain();
+      }
+
+      const value = this.paramValues[def.key];
+      const noiseValue = noise1(this.frame * noiseSpeed + state.noiseDomain);
+      const nextCurrent = value.min + (value.max - value.min) * noiseValue;
 
       const clampedCurrent = clampNumber(nextCurrent, value.min, value.max);
       if (Math.abs(clampedCurrent - value.current) > 1e-6) {
@@ -798,10 +821,16 @@ export class GenSynthEngine {
 
         const controlRow = document.createElement("div");
         if (def.type === "range") {
-          const functionBtn = this.createFunctionButton(def.key, def.label);
-          controlRow.className = "param-control-row";
-          controlRow.append(functionBtn, triControl);
-          this.rangeFunctionButtonEls.set(def.key, functionBtn);
+          if (this.isRangeFunctionEnabled(def)) {
+            const functionBtn = this.createFunctionButton(def.key, def.label);
+            controlRow.className = "param-control-row";
+            controlRow.append(functionBtn, triControl);
+            this.rangeFunctionButtonEls.set(def.key, functionBtn);
+          } else {
+            triControl.classList.add("tri-control-bounds");
+            controlRow.className = "param-control-row param-control-row-bounds";
+            controlRow.append(triControl);
+          }
         } else {
           controlRow.className = "param-control-row param-control-row-bounds";
           controlRow.append(triControl);

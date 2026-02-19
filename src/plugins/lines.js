@@ -73,8 +73,9 @@ export const linesPlugin = {
           label: "Start Density",
           min: 0,
           max: 100,
-          default: 100,
+          default: 0,
           step: 1,
+          allowFunction: false,
         },
         {
           type: "range",
@@ -82,8 +83,9 @@ export const linesPlugin = {
           label: "End Density",
           min: 0,
           max: 100,
-          default: 0,
+          default: 100,
           step: 1,
+          allowFunction: false,
         },
         {
           type: "range",
@@ -91,8 +93,9 @@ export const linesPlugin = {
           label: "Density Direction",
           min: 0,
           max: 360,
-          default: 0,
+          default: 180,
           step: 1,
+          allowFunction: false,
         },
       ],
     };

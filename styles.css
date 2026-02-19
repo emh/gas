@@ -10,7 +10,7 @@
   --input-bg: #ffffff;
   --slider-row-width: 320px;
   --param-row-gap: 8px;
-  --fn-btn-width: 30px;
+  --fn-btn-width: 56px;
   --slider-track: #9a9a9a;
   --control-radius: 6px;
 }
@@ -231,7 +231,7 @@ body {
   appearance: none;
   width: var(--fn-btn-width);
   min-width: var(--fn-btn-width);
-  height: var(--fn-btn-width);
+  height: 30px;
   padding: 0;
   border: 1px solid #000000;
   border-radius: var(--control-radius);
@@ -242,6 +242,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
 }
 
 .param-fn-btn:hover {
@@ -249,17 +252,12 @@ body {
 }
 
 .param-fn-btn.is-active {
-  background: #ffffff;
+  background: #000000;
+  color: #ffffff;
 }
 
 .param-fn-btn.is-active:hover {
-  background: var(--btn-hover);
-}
-
-.param-fn-icon {
-  width: 14px;
-  height: 14px;
-  stroke-width: 2;
+  background: #1a1a1a;
 }
 
 .param-row input {
@@ -405,7 +403,7 @@ body {
 @media (max-width: 760px) {
   :root {
     --slider-row-width: 280px;
-    --fn-btn-width: 28px;
+    --fn-btn-width: 52px;
   }
 
   .control-panel {
@@ -440,6 +438,10 @@ body {
 
   .tri-control {
     min-height: 28px;
+  }
+
+  .param-fn-btn {
+    height: 28px;
   }
 
   .tri-track {
