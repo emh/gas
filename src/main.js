@@ -23,6 +23,8 @@ const PAUSE_ICON_PATH = "M6 4h4v16H6zM14 4h4v16h-4z";
 const MINIMIZE_ICON_PATH = "M5 12h14";
 const MAXIMIZE_ICON_PATH = "M12 5v14M5 12h14";
 const SPEED_OPTIONS = [1, 2, 4, 8, 16, 32];
+const SNAPSHOT_BACKGROUND = "#ffffff";
+const SELECTED_PLUGIN_STORAGE_KEY = "gensynth:selected-plugin:v1";
 
 let paramsCollapsed = false;
 let speedIndex = 0;
@@ -35,7 +37,29 @@ const plugins = [
   squigglesPlugin,
 ];
 const pluginsById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
-const defaultPlugin = circlesPlugin;
+
+function loadSelectedPluginId() {
+  try {
+    return localStorage.getItem(SELECTED_PLUGIN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistSelectedPluginId(pluginId) {
+  if (typeof pluginId !== "string" || pluginId.length === 0) {
+    return;
+  }
+
+  try {
+    localStorage.setItem(SELECTED_PLUGIN_STORAGE_KEY, pluginId);
+  } catch {
+    // Ignore storage write failures.
+  }
+}
+
+const storedPluginId = loadSelectedPluginId();
+const defaultPlugin = pluginsById.get(storedPluginId) ?? circlesPlugin;
 
 for (const plugin of plugins) {
   const option = document.createElement("option");
@@ -44,6 +68,7 @@ for (const plugin of plugins) {
   algoSelect.append(option);
 }
 algoSelect.value = defaultPlugin.id;
+persistSelectedPluginId(defaultPlugin.id);
 
 function setRunUi(running) {
   if (!playPauseBtn) {
@@ -122,14 +147,36 @@ function downloadBlob(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
+function createSnapshotCanvas(sourceCanvas) {
+  if (!(sourceCanvas instanceof HTMLCanvasElement)) {
+    return null;
+  }
+
+  const snapshotCanvas = document.createElement("canvas");
+  snapshotCanvas.width = Math.max(1, sourceCanvas.width);
+  snapshotCanvas.height = Math.max(1, sourceCanvas.height);
+
+  const snapshotCtx = snapshotCanvas.getContext("2d");
+  if (!snapshotCtx) {
+    return null;
+  }
+
+  snapshotCtx.fillStyle = SNAPSHOT_BACKGROUND;
+  snapshotCtx.fillRect(0, 0, snapshotCanvas.width, snapshotCanvas.height);
+  snapshotCtx.drawImage(sourceCanvas, 0, 0);
+
+  return snapshotCanvas;
+}
+
 function downloadCanvasSnapshot() {
   if (!(canvas instanceof HTMLCanvasElement)) {
     return;
   }
 
   const filename = makeSnapshotFilename();
-  if (typeof canvas.toBlob === "function") {
-    canvas.toBlob((blob) => {
+  const exportCanvas = createSnapshotCanvas(canvas) ?? canvas;
+  if (typeof exportCanvas.toBlob === "function") {
+    exportCanvas.toBlob((blob) => {
       if (!blob) {
         return;
       }
@@ -139,7 +186,7 @@ function downloadCanvasSnapshot() {
   }
 
   const link = document.createElement("a");
-  link.href = canvas.toDataURL("image/png");
+  link.href = exportCanvas.toDataURL("image/png");
   link.download = filename;
   document.body.append(link);
   link.click();
@@ -179,6 +226,7 @@ algoSelect?.addEventListener("change", () => {
   }
 
   engine.setPlugin(selected);
+  persistSelectedPluginId(selected.id);
 });
 
 paramsToggleBtn?.addEventListener("click", () => {

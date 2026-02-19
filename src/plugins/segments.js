@@ -527,6 +527,7 @@ export const segmentsPlugin = {
     ctx.moveTo(split.cutStart.x, split.cutStart.y);
     ctx.lineTo(split.cutEnd.x, split.cutEnd.y);
     ctx.lineWidth = lineThickness;
+    ctx.lineCap = "butt";
     ctx.strokeStyle = strokeStyle;
     ctx.stroke();
   },

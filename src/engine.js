@@ -10,6 +10,9 @@ const MAX_RUNS_PER_FRAME = 120;
 const PARAM_NOISE_SPEEDS = [0, 0.001, 0.005, 0.01, 0.1, 0.5];
 const DEFAULT_PARAM_NOISE_SPEED_INDEX = 0;
 const PARAM_NOISE_DOMAIN_STEP = 127.91831;
+const PARAM_SETTINGS_STORAGE_KEY = "gensynth:param-settings:v1";
+const PARAM_SETTINGS_STORAGE_VERSION = 1;
+const PARAM_SETTINGS_SAVE_DEBOUNCE_MS = 150;
 const INK_SWATCH_KEYS = new Set(["hue", "saturation", "lightness"]);
 const SHARED_INK_PARAM_KEYS = new Set(INK_PARAMETER_DEFS.map((def) => def.key));
 
@@ -175,6 +178,8 @@ export class GenSynthEngine {
     this.rangeFunctionButtonEls = new Map();
     this.paramFunctionStates = new Map();
     this.nextNoiseDomainSeed = 1;
+    this.persistedPluginSettings = this.loadPersistedPluginSettings();
+    this.persistSaveTimer = 0;
 
     this.pluginState = {};
 
@@ -184,7 +189,11 @@ export class GenSynthEngine {
 
   init() {
     this.resizeCanvas();
-    this.initializePlugin({ useDefaults: true, rerenderHud: true });
+    this.initializePlugin({
+      useDefaults: true,
+      rerenderHud: true,
+      applyPersisted: true,
+    });
 
     window.addEventListener("resize", this.handleResize);
     this.setStatus("Stopped");
@@ -239,6 +248,7 @@ export class GenSynthEngine {
 
   destroy() {
     window.removeEventListener("resize", this.handleResize);
+    this.persistCurrentPluginSettings({ immediate: true });
     this.stop();
   }
 
@@ -284,7 +294,7 @@ export class GenSynthEngine {
 
   handleResize() {
     this.resizeCanvas();
-    this.initializePlugin({ useDefaults: true, rerenderHud: true });
+    this.initializePlugin({ useDefaults: false, rerenderHud: true });
     this.frame = 0;
 
     this.clearCanvas();
@@ -317,6 +327,8 @@ export class GenSynthEngine {
       return;
     }
 
+    this.persistCurrentPluginSettings({ immediate: true });
+
     const wasRunning = this.running;
     this.stop();
 
@@ -334,6 +346,7 @@ export class GenSynthEngine {
       useDefaults,
       rerenderHud: true,
       preserveParamKeys: useDefaults ? SHARED_INK_PARAM_KEYS : null,
+      applyPersisted: useDefaults,
     });
 
     if (wasRunning) {
@@ -341,7 +354,217 @@ export class GenSynthEngine {
     }
   }
 
-  initializePlugin({ useDefaults, rerenderHud, preserveParamKeys = null }) {
+  getStorage() {
+    try {
+      if (typeof window === "undefined" || !window.localStorage) {
+        return null;
+      }
+
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  }
+
+  loadPersistedPluginSettings() {
+    const storage = this.getStorage();
+    if (!storage) {
+      return {};
+    }
+
+    try {
+      const raw = storage.getItem(PARAM_SETTINGS_STORAGE_KEY);
+      if (!raw) {
+        return {};
+      }
+
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") {
+        return {};
+      }
+
+      const plugins = parsed.plugins;
+      if (!plugins || typeof plugins !== "object" || Array.isArray(plugins)) {
+        return {};
+      }
+
+      return plugins;
+    } catch {
+      return {};
+    }
+  }
+
+  flushPersistedPluginSettings() {
+    const storage = this.getStorage();
+    if (!storage) {
+      return;
+    }
+
+    if (this.persistSaveTimer) {
+      clearTimeout(this.persistSaveTimer);
+      this.persistSaveTimer = 0;
+    }
+
+    try {
+      storage.setItem(
+        PARAM_SETTINGS_STORAGE_KEY,
+        JSON.stringify({
+          version: PARAM_SETTINGS_STORAGE_VERSION,
+          plugins: this.persistedPluginSettings,
+        }),
+      );
+    } catch {
+      // Ignore storage write failures (private mode, quota, etc).
+    }
+  }
+
+  schedulePersistedPluginSettingsFlush() {
+    if (this.persistSaveTimer) {
+      clearTimeout(this.persistSaveTimer);
+    }
+
+    this.persistSaveTimer = window.setTimeout(() => {
+      this.persistSaveTimer = 0;
+      this.flushPersistedPluginSettings();
+    }, PARAM_SETTINGS_SAVE_DEBOUNCE_MS);
+  }
+
+  serializeCurrentPluginSettings() {
+    const params = {};
+    const functions = {};
+
+    for (const def of this.paramDefs.values()) {
+      const value = this.paramValues[def.key];
+
+      if (def.type === "range" && isRangeValue(value)) {
+        params[def.key] = {
+          min: value.min,
+          current: value.current,
+          max: value.max,
+        };
+        continue;
+      }
+
+      if (def.type === "bounds" && isBoundsValue(value)) {
+        params[def.key] = {
+          min: value.min,
+          max: value.max,
+        };
+        continue;
+      }
+
+      if (def.type === "number" && Number.isFinite(value)) {
+        params[def.key] = value;
+      }
+    }
+
+    for (const def of this.paramDefs.values()) {
+      if (!this.isRangeFunctionEnabled(def)) {
+        continue;
+      }
+
+      const state = this.paramFunctionStates.get(def.key);
+      if (!state) {
+        continue;
+      }
+
+      functions[def.key] = {
+        noiseSpeedIndex: this.normalizeNoiseSpeedIndex(state.noiseSpeedIndex),
+      };
+    }
+
+    return {
+      params,
+      functions,
+    };
+  }
+
+  persistCurrentPluginSettings({ immediate = false } = {}) {
+    const pluginId = this.plugin?.id;
+    if (!pluginId) {
+      return;
+    }
+
+    this.persistedPluginSettings[pluginId] = this.serializeCurrentPluginSettings();
+
+    if (immediate) {
+      this.flushPersistedPluginSettings();
+      return;
+    }
+
+    this.schedulePersistedPluginSettingsFlush();
+  }
+
+  applyPersistedPluginSettings(pluginId) {
+    if (!pluginId) {
+      return;
+    }
+
+    const saved = this.persistedPluginSettings[pluginId];
+    if (!saved || typeof saved !== "object") {
+      return;
+    }
+
+    const savedParams = saved.params;
+    if (savedParams && typeof savedParams === "object") {
+      for (const def of this.paramDefs.values()) {
+        if (!(def.key in savedParams)) {
+          continue;
+        }
+
+        const candidate = savedParams[def.key];
+        if (def.type === "range" && isRangeValue(candidate)) {
+          this.paramValues[def.key] = this.normalizeRangeTriplet(def, candidate);
+          continue;
+        }
+
+        if (def.type === "bounds" && isBoundsValue(candidate)) {
+          this.paramValues[def.key] = this.normalizeBoundsPair(def, candidate);
+          continue;
+        }
+
+        if (def.type === "number") {
+          const nextNumber = toNumber(candidate, this.paramValues[def.key]);
+          this.paramValues[def.key] = clampNumber(nextNumber, def.min, def.max);
+        }
+      }
+    }
+
+    const savedFunctions = saved.functions;
+    if (savedFunctions && typeof savedFunctions === "object") {
+      for (const def of this.paramDefs.values()) {
+        if (!this.isRangeFunctionEnabled(def) || !(def.key in savedFunctions)) {
+          continue;
+        }
+
+        const entry = savedFunctions[def.key];
+        if (!entry || typeof entry !== "object") {
+          continue;
+        }
+
+        const existingState = this.paramFunctionStates.get(def.key);
+        const noiseSpeedIndex = this.normalizeNoiseSpeedIndex(entry.noiseSpeedIndex);
+
+        if (existingState) {
+          existingState.noiseSpeedIndex = noiseSpeedIndex;
+          this.paramFunctionStates.set(def.key, existingState);
+          continue;
+        }
+
+        this.paramFunctionStates.set(def.key, {
+          noiseSpeedIndex,
+          noiseDomain: this.createNoiseDomain(),
+        });
+      }
+    }
+  }
+
+  initializePlugin({
+    useDefaults,
+    rerenderHud,
+    preserveParamKeys = null,
+    applyPersisted = false,
+  }) {
     const initResult = this.plugin.init(this.createInitContext());
     const pluginParamDefs = Array.isArray(initResult?.parameters)
       ? initResult.parameters
@@ -351,6 +574,9 @@ export class GenSynthEngine {
 
     this.resolveParamDefs({ useDefaults, preserveParamKeys });
     this.normalizeFunctionStates();
+    if (applyPersisted) {
+      this.applyPersistedPluginSettings(this.plugin?.id);
+    }
 
     if (rerenderHud) {
       this.renderParamsHud();
@@ -719,6 +945,7 @@ export class GenSynthEngine {
     this.paramFunctionStates.set(key, current);
     this.updateFunctionButtonUi(key, this.rangeFunctionButtonEls.get(key), def.label);
     this.syncHudValues();
+    this.persistCurrentPluginSettings();
   }
 
   updateFunctionButtonUi(key, button, label) {
@@ -1121,6 +1348,7 @@ export class GenSynthEngine {
     this.paramValues[key] = def.type === "range"
       ? this.normalizeRangeTriplet(def, next)
       : this.normalizeBoundsPair(def, next);
+    this.persistCurrentPluginSettings();
   }
 
   syncHudValues() {
@@ -1338,6 +1566,7 @@ export class GenSynthEngine {
 
     this.paramValues[key] = clampNumber(parsed, def.min, def.max);
     this.syncHudValues();
+    this.persistCurrentPluginSettings();
   }
 
   clearCanvas() {
