@@ -2,6 +2,7 @@ import { GenSynthEngine } from "./engine.js";
 import { circlesPlugin } from "./plugins/circles.js";
 import { linesPlugin } from "./plugins/lines.js";
 import { spiralsPlugin } from "./plugins/spirals.js";
+import { squigglesPlugin } from "./plugins/squiggles.js";
 
 const canvas = document.getElementById("stage");
 const paramsForm = document.getElementById("params-form");
@@ -29,6 +30,7 @@ const plugins = [
   circlesPlugin,
   linesPlugin,
   spiralsPlugin,
+  squigglesPlugin,
 ];
 const pluginsById = new Map(plugins.map((plugin) => [plugin.id, plugin]));
 const defaultPlugin = circlesPlugin;
