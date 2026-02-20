@@ -14,6 +14,7 @@ const playPauseBtn = document.getElementById("play-pause-btn");
 const restartBtn = document.getElementById("restart-btn");
 const speedBtn = document.getElementById("speed-btn");
 const cameraBtn = document.getElementById("camera-btn");
+const fpsIndicator = document.getElementById("fps-indicator");
 const playPauseIconPath = document.getElementById("play-pause-icon-path");
 const paramsToggleBtn = document.getElementById("params-toggle-btn");
 const paramsToggleIconPath = document.getElementById("params-toggle-icon-path");
@@ -25,9 +26,13 @@ const MAXIMIZE_ICON_PATH = "M12 5v14M5 12h14";
 const SPEED_OPTIONS = [1, 2, 4, 8, 16, 32];
 const SNAPSHOT_BACKGROUND = "#ffffff";
 const SELECTED_PLUGIN_STORAGE_KEY = "gensynth:selected-plugin:v1";
+const FPS_SAMPLE_INTERVAL_MS = 500;
 
 let paramsCollapsed = false;
 let speedIndex = 0;
+let fpsRafId = 0;
+let fpsSampleStartMs = 0;
+let fpsFrameCount = 0;
 
 const plugins = [
   circlesPlugin,
@@ -125,6 +130,62 @@ function setPlaybackSpeed(index) {
   }
 }
 
+function setFpsUi(fps) {
+  if (!fpsIndicator) {
+    return;
+  }
+
+  if (!Number.isFinite(fps)) {
+    fpsIndicator.textContent = "-- fps";
+    return;
+  }
+
+  fpsIndicator.textContent = `${Math.round(fps)} fps`;
+}
+
+function fpsLoop(timestamp) {
+  if (fpsSampleStartMs === 0) {
+    fpsSampleStartMs = timestamp;
+    fpsFrameCount = 0;
+  }
+
+  fpsFrameCount += 1;
+  const elapsedMs = timestamp - fpsSampleStartMs;
+  if (elapsedMs >= FPS_SAMPLE_INTERVAL_MS) {
+    const fps = (fpsFrameCount * 1000) / elapsedMs;
+    setFpsUi(fps);
+    fpsSampleStartMs = timestamp;
+    fpsFrameCount = 0;
+  }
+
+  fpsRafId = requestAnimationFrame(fpsLoop);
+}
+
+function startFpsMonitor() {
+  if (!fpsIndicator) {
+    return;
+  }
+
+  if (fpsRafId) {
+    cancelAnimationFrame(fpsRafId);
+  }
+
+  fpsSampleStartMs = 0;
+  fpsFrameCount = 0;
+  setFpsUi(Number.NaN);
+  fpsRafId = requestAnimationFrame(fpsLoop);
+}
+
+function stopFpsMonitor() {
+  if (fpsRafId) {
+    cancelAnimationFrame(fpsRafId);
+    fpsRafId = 0;
+  }
+
+  fpsSampleStartMs = 0;
+  fpsFrameCount = 0;
+}
+
 function makeSnapshotFilename() {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -206,6 +267,7 @@ engine.init();
 setRunUi(engine.running);
 setParamsPanelCollapsed(false);
 setPlaybackSpeed(0);
+startFpsMonitor();
 
 playPauseBtn?.addEventListener("click", () => {
   if (engine.running) {
@@ -242,6 +304,7 @@ cameraBtn?.addEventListener("click", () => {
 });
 
 window.addEventListener("beforeunload", () => {
+  stopFpsMonitor();
   engine.destroy();
 });
 

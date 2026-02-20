@@ -3,8 +3,13 @@ import { resolveInkStyle } from "./ink-params.js";
 const EPSILON = 1e-9;
 const POINT_EPSILON = 1e-6;
 const MIN_REGION_AREA = 1e-6;
+const MIN_SPLITTABLE_AREA_PX = 9;
+const MIN_SPLITTABLE_DIMENSION_PX = 3;
 const MAX_SPLIT_ATTEMPTS = 24;
 const MAX_REGION_ATTEMPTS_PER_RUN = 8;
+const MAX_REGION_FAILURES = 2;
+const AREA_BUCKETS_PER_LOG2 = 4;
+const AREA_BUCKET_COUNT = 128;
 const NEAR_SQUARE_THRESHOLD = 0.75;
 const ANCHOR_MARGIN_RATIO = 0.05;
 const ANCHOR_BAND_START = 0.1;
@@ -288,6 +293,7 @@ function createRegion(poly, selectionWeight = 1) {
     area,
     bbox: polygonBoundingBox(poly),
     selectionWeight: Math.max(0, Number(selectionWeight) || 0),
+    splitFailures: 0,
   };
 }
 
@@ -300,7 +306,34 @@ function createRootRegion(width, height) {
   ]);
 }
 
+function canSplitVertical(region) {
+  return region.bbox.w >= MIN_SPLITTABLE_DIMENSION_PX;
+}
+
+function canSplitHorizontal(region) {
+  return region.bbox.h >= MIN_SPLITTABLE_DIMENSION_PX;
+}
+
+function canRegionSplit(region) {
+  return (
+    region.area >= MIN_SPLITTABLE_AREA_PX
+    && (canSplitVertical(region) || canSplitHorizontal(region))
+  );
+}
+
 function chooseVerticalCut(region, verticalBias) {
+  const canVertical = canSplitVertical(region);
+  const canHorizontal = canSplitHorizontal(region);
+  if (!canVertical && !canHorizontal) {
+    return null;
+  }
+  if (canVertical && !canHorizontal) {
+    return true;
+  }
+  if (!canVertical && canHorizontal) {
+    return false;
+  }
+
   const { w, h } = region.bbox;
   if (w <= EPSILON || h <= EPSILON) {
     return clamp01(verticalBias) >= 0.5;
@@ -345,10 +378,17 @@ function pickSplitAnchor(region, cutIsVertical) {
 }
 
 function attemptRegionSplit(region, params) {
+  if (!canRegionSplit(region)) {
+    return null;
+  }
+
   const angleOffsetRadians = (params.angle * Math.PI) / 180;
 
   for (let attempt = 0; attempt < MAX_SPLIT_ATTEMPTS; attempt += 1) {
     const cutIsVertical = chooseVerticalCut(region, params.verticalBias);
+    if (cutIsVertical === null) {
+      return null;
+    }
     const baseAngle = cutIsVertical ? Math.PI * 0.5 : 0;
     const direction = {
       x: Math.cos(baseAngle + angleOffsetRadians),
@@ -377,56 +417,191 @@ function attemptRegionSplit(region, params) {
   return null;
 }
 
-function ensureRegionListHasRoot(state, width, height) {
-  if (!Array.isArray(state.regions)) {
-    state.regions = [];
+function regionSelectionWeight(region) {
+  return Math.max(0, Number(region?.selectionWeight) || 0);
+}
+
+function areaBucketIndex(area) {
+  const safeArea = Math.max(1, Number(area) || 1);
+  const scaled = Math.floor(Math.log2(safeArea) * AREA_BUCKETS_PER_LOG2);
+  return Math.max(0, Math.min(AREA_BUCKET_COUNT - 1, scaled));
+}
+
+function createRegionPool() {
+  return {
+    buckets: Array.from({ length: AREA_BUCKET_COUNT }, () => []),
+    bucketCounts: new Array(AREA_BUCKET_COUNT).fill(0),
+    bucketWeightSums: new Array(AREA_BUCKET_COUNT).fill(0),
+    totalCount: 0,
+  };
+}
+
+function addRegionToPool(pool, region) {
+  if (!pool || !region || !canRegionSplit(region)) {
+    return false;
   }
 
-  if (state.regions.length === 0) {
+  const bucketIndex = areaBucketIndex(region.area);
+  pool.buckets[bucketIndex].push(region);
+  pool.bucketCounts[bucketIndex] += 1;
+  pool.bucketWeightSums[bucketIndex] += regionSelectionWeight(region);
+  pool.totalCount += 1;
+  return true;
+}
+
+function popRegionFromPoolBucket(pool, bucketIndex, regionIndex) {
+  const bucket = pool.buckets[bucketIndex];
+  if (!bucket || bucket.length === 0 || regionIndex < 0 || regionIndex >= bucket.length) {
+    return null;
+  }
+
+  const lastIndex = bucket.length - 1;
+  const region = bucket[regionIndex];
+  if (regionIndex !== lastIndex) {
+    bucket[regionIndex] = bucket[lastIndex];
+  }
+  bucket.pop();
+
+  pool.bucketCounts[bucketIndex] = Math.max(0, pool.bucketCounts[bucketIndex] - 1);
+  pool.bucketWeightSums[bucketIndex] = Math.max(
+    0,
+    pool.bucketWeightSums[bucketIndex] - regionSelectionWeight(region),
+  );
+  pool.totalCount = Math.max(0, pool.totalCount - 1);
+
+  return region ?? null;
+}
+
+function ensureRegionPoolHasRoot(state, width, height) {
+  if (
+    !state.regionPool
+    || !Array.isArray(state.regionPool.buckets)
+    || !Array.isArray(state.regionPool.bucketCounts)
+    || !Array.isArray(state.regionPool.bucketWeightSums)
+  ) {
+    state.regionPool = createRegionPool();
+  }
+
+  if (!(state.regionPool.totalCount > 0)) {
     const root = createRootRegion(width, height);
     if (root) {
-      state.regions.push(root);
+      addRegionToPool(state.regionPool, root);
     }
   }
 }
 
-function popRegionBySelectionWeight(regions, uniformity) {
-  if (regions.length === 0) {
-    return null;
-  }
-
+function selectEligibleBuckets(pool, uniformity) {
   const uniformityClamped = clamp01(Number(uniformity) || 0);
   const eligibleFraction = 1 - 0.9 * uniformityClamped;
-  const eligibleCount = Math.max(1, Math.ceil(regions.length * eligibleFraction));
-  const eligibleIndices = regions
-    .map((region, index) => ({ index, area: region.area }))
-    .sort((a, b) => b.area - a.area)
-    .slice(0, eligibleCount)
-    .map((entry) => entry.index);
+  const targetCount = Math.max(1, Math.ceil(pool.totalCount * eligibleFraction));
 
-  let totalWeight = 0;
-  for (const index of eligibleIndices) {
-    totalWeight += Math.max(0, Number(regions[index].selectionWeight) || 0);
-  }
+  const eligibleBuckets = [];
+  let countSoFar = 0;
+  for (let bucketIndex = AREA_BUCKET_COUNT - 1; bucketIndex >= 0; bucketIndex -= 1) {
+    const bucketCount = pool.bucketCounts[bucketIndex];
+    if (!(bucketCount > 0)) {
+      continue;
+    }
 
-  let index = eligibleIndices[0];
-  if (!(totalWeight > 0)) {
-    index = eligibleIndices[Math.floor(Math.random() * eligibleIndices.length)];
-  } else {
-    let threshold = Math.random() * totalWeight;
-    index = eligibleIndices[eligibleIndices.length - 1];
-
-    for (const candidateIndex of eligibleIndices) {
-      threshold -= Math.max(0, Number(regions[candidateIndex].selectionWeight) || 0);
-      if (threshold <= 0) {
-        index = candidateIndex;
-        break;
-      }
+    eligibleBuckets.push(bucketIndex);
+    countSoFar += bucketCount;
+    if (countSoFar >= targetCount) {
+      break;
     }
   }
 
-  const [region] = regions.splice(index, 1);
-  return region ?? null;
+  return eligibleBuckets;
+}
+
+function pickBucketByWeightOrCount(pool, bucketIndices) {
+  if (!bucketIndices.length) {
+    return -1;
+  }
+
+  let totalWeight = 0;
+  for (const bucketIndex of bucketIndices) {
+    totalWeight += Math.max(0, pool.bucketWeightSums[bucketIndex]);
+  }
+
+  if (totalWeight > 0) {
+    let threshold = Math.random() * totalWeight;
+    let selected = bucketIndices[bucketIndices.length - 1];
+    for (const bucketIndex of bucketIndices) {
+      threshold -= Math.max(0, pool.bucketWeightSums[bucketIndex]);
+      if (threshold <= 0) {
+        selected = bucketIndex;
+        break;
+      }
+    }
+    return selected;
+  }
+
+  let totalCount = 0;
+  for (const bucketIndex of bucketIndices) {
+    totalCount += pool.bucketCounts[bucketIndex];
+  }
+
+  if (!(totalCount > 0)) {
+    return -1;
+  }
+
+  let threshold = Math.random() * totalCount;
+  let selected = bucketIndices[bucketIndices.length - 1];
+  for (const bucketIndex of bucketIndices) {
+    threshold -= pool.bucketCounts[bucketIndex];
+    if (threshold <= 0) {
+      selected = bucketIndex;
+      break;
+    }
+  }
+
+  return selected;
+}
+
+function pickRegionIndexInBucket(bucket, bucketWeightSum) {
+  if (!Array.isArray(bucket) || bucket.length === 0) {
+    return -1;
+  }
+
+  if (!(bucketWeightSum > 0)) {
+    return Math.floor(Math.random() * bucket.length);
+  }
+
+  let threshold = Math.random() * bucketWeightSum;
+  let selected = bucket.length - 1;
+  for (let i = 0; i < bucket.length; i += 1) {
+    threshold -= regionSelectionWeight(bucket[i]);
+    if (threshold <= 0) {
+      selected = i;
+      break;
+    }
+  }
+
+  return selected;
+}
+
+function popRegionBySelectionWeight(pool, uniformity) {
+  if (!pool || !(pool.totalCount > 0)) {
+    return null;
+  }
+
+  const eligibleBuckets = selectEligibleBuckets(pool, uniformity);
+  if (!eligibleBuckets.length) {
+    return null;
+  }
+
+  const bucketIndex = pickBucketByWeightOrCount(pool, eligibleBuckets);
+  if (bucketIndex < 0) {
+    return null;
+  }
+
+  const bucket = pool.buckets[bucketIndex];
+  const regionIndex = pickRegionIndexInBucket(bucket, pool.bucketWeightSums[bucketIndex]);
+  if (regionIndex < 0) {
+    return null;
+  }
+
+  return popRegionFromPoolBucket(pool, bucketIndex, regionIndex);
 }
 
 function splitSelectionWeight(parentWeight, fairness) {
@@ -447,10 +622,10 @@ export const segmentsPlugin = {
   name: "Segments",
 
   init({ width, height }) {
-    const regions = [];
+    const regionPool = createRegionPool();
     const root = createRootRegion(width, height);
     if (root) {
-      regions.push(root);
+      addRegionToPool(regionPool, root);
     }
 
     return {
@@ -496,21 +671,21 @@ export const segmentsPlugin = {
         },
       ],
       state: {
-        regions,
+        regionPool,
       },
     };
   },
 
   run({ ctx, width, height, params, state }) {
-    ensureRegionListHasRoot(state, width, height);
+    ensureRegionPoolHasRoot(state, width, height);
 
     const skippedRegions = [];
     let split = null;
     let selectedRegion = null;
     let tries = 0;
 
-    while (state.regions.length > 0 && tries < MAX_REGION_ATTEMPTS_PER_RUN) {
-      const candidateRegion = popRegionBySelectionWeight(state.regions, params.uniformity);
+    while (state.regionPool.totalCount > 0 && tries < MAX_REGION_ATTEMPTS_PER_RUN) {
+      const candidateRegion = popRegionBySelectionWeight(state.regionPool, params.uniformity);
       if (!candidateRegion) {
         break;
       }
@@ -521,12 +696,18 @@ export const segmentsPlugin = {
         break;
       }
 
-      skippedRegions.push(candidateRegion);
+      candidateRegion.splitFailures = (Number(candidateRegion.splitFailures) || 0) + 1;
+      if (
+        candidateRegion.splitFailures < MAX_REGION_FAILURES
+        && canRegionSplit(candidateRegion)
+      ) {
+        skippedRegions.push(candidateRegion);
+      }
       tries += 1;
     }
 
     for (const region of skippedRegions) {
-      state.regions.push(region);
+      addRegionToPool(state.regionPool, region);
     }
 
     if (!split) {
@@ -538,8 +719,8 @@ export const segmentsPlugin = {
     split.regionA.selectionWeight = childAWeight;
     split.regionB.selectionWeight = childBWeight;
 
-    state.regions.push(split.regionA);
-    state.regions.push(split.regionB);
+    addRegionToPool(state.regionPool, split.regionA);
+    addRegionToPool(state.regionPool, split.regionB);
 
     const { lineThickness, strokeStyle } = resolveInkStyle(params);
     ctx.beginPath();
