@@ -1,4 +1,5 @@
 import { GenSynthEngine } from "./engine.js";
+import { arcsPlugin } from "./plugins/arcs.js";
 import { circlesPlugin } from "./plugins/circles.js";
 import { linesPlugin } from "./plugins/lines.js";
 import { segmentsPlugin } from "./plugins/segments.js";
@@ -36,6 +37,7 @@ let fpsFrameCount = 0;
 let fpsVisible = false;
 
 const plugins = [
+  arcsPlugin,
   circlesPlugin,
   linesPlugin,
   segmentsPlugin,
