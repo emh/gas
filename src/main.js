@@ -15,10 +15,15 @@ const playPauseBtn = document.getElementById("play-pause-btn");
 const restartBtn = document.getElementById("restart-btn");
 const speedBtn = document.getElementById("speed-btn");
 const cameraBtn = document.getElementById("camera-btn");
+const infoBtn = document.getElementById("info-btn");
 const fpsIndicator = document.getElementById("fps-indicator");
 const playPauseIconPath = document.getElementById("play-pause-icon-path");
 const paramsToggleBtn = document.getElementById("params-toggle-btn");
 const paramsToggleIconPath = document.getElementById("params-toggle-icon-path");
+const infoScreen = document.getElementById("info-screen");
+const infoBackdrop = document.getElementById("info-backdrop");
+const infoCloseBtn = document.getElementById("info-close-btn");
+const infoDiagram = document.getElementById("info-diagram");
 
 const PLAY_ICON_PATH = "M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z";
 const PAUSE_ICON_PATH = "M6 4h4v16H6zM14 4h4v16h-4z";
@@ -35,6 +40,7 @@ let fpsRafId = 0;
 let fpsSampleStartMs = 0;
 let fpsFrameCount = 0;
 let fpsVisible = false;
+let infoVisible = false;
 
 const plugins = [
   arcsPlugin,
@@ -205,6 +211,37 @@ function setFpsVisible(visible) {
   setFpsUi(Number.NaN);
 }
 
+function setInfoVisible(visible) {
+  infoVisible = Boolean(visible);
+
+  if (infoScreen) {
+    infoScreen.hidden = !infoVisible;
+    infoScreen.setAttribute("aria-hidden", infoVisible ? "false" : "true");
+  }
+
+  if (infoBtn) {
+    const label = infoVisible ? "Hide info" : "Show info";
+    infoBtn.setAttribute("aria-label", label);
+    infoBtn.title = label;
+    infoBtn.classList.toggle("is-active", infoVisible);
+  }
+
+  if (!infoVisible) {
+    setInfoDiagramCallout("");
+  }
+}
+
+function setInfoDiagramCallout(part) {
+  if (!infoDiagram) {
+    return;
+  }
+
+  const callouts = infoDiagram.querySelectorAll("[data-callout]");
+  callouts.forEach((callout) => {
+    callout.classList.toggle("is-visible", part.length > 0 && callout.dataset.callout === part);
+  });
+}
+
 function isTypingTarget(target) {
   if (!(target instanceof Element)) {
     return false;
@@ -295,6 +332,8 @@ setRunUi(engine.running);
 setParamsPanelCollapsed(false);
 setPlaybackSpeed(0);
 setFpsVisible(false);
+setInfoVisible(true);
+setInfoDiagramCallout("");
 
 playPauseBtn?.addEventListener("click", () => {
   if (engine.running) {
@@ -330,8 +369,44 @@ cameraBtn?.addEventListener("click", () => {
   downloadCanvasSnapshot();
 });
 
+infoBtn?.addEventListener("click", () => {
+  setInfoVisible(!infoVisible);
+});
+
+infoBackdrop?.addEventListener("click", () => {
+  setInfoVisible(false);
+});
+
+infoCloseBtn?.addEventListener("click", () => {
+  setInfoVisible(false);
+});
+
+infoDiagram?.addEventListener("pointermove", (event) => {
+  const target = event.target instanceof Element
+    ? event.target.closest("[data-info-part]")
+    : null;
+  setInfoDiagramCallout(target?.dataset.infoPart ?? "");
+});
+
+infoDiagram?.addEventListener("pointerleave", () => {
+  setInfoDiagramCallout("");
+});
+
 window.addEventListener("keydown", (event) => {
   if (event.repeat || isTypingTarget(event.target)) {
+    return;
+  }
+
+  if (event.key === "Escape" && infoVisible) {
+    event.preventDefault();
+    setInfoVisible(false);
+    return;
+  }
+
+  const isInfoKey = event.key.toLowerCase() === "i";
+  if (isInfoKey) {
+    event.preventDefault();
+    setInfoVisible(!infoVisible);
     return;
   }
 

@@ -2,6 +2,8 @@
 
 GenSynth is a browser-based generative art scaffold for running pluggable algorithms with user-editable parameters.
 
+![GenSynth screenshot](./gensynth.png)
+
 ## What is implemented
 
 - Harness/engine for plugin algorithms (`init` + `run` API)
@@ -98,3 +100,7 @@ python3 -m http.server 4173
 ```
 
 Then open [http://localhost:4173](http://localhost:4173).
+
+## License
+
+MIT. See [LICENSE](./LICENSE).

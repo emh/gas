@@ -67,6 +67,7 @@
             <circle cx="12" cy="13" r="3" />
           </svg>
         </button>
+        <button id="info-btn" class="info-btn" type="button" aria-label="Show info" title="Show info">i</button>
         <div id="fps-indicator" class="fps-indicator" aria-live="off" hidden>-- fps</div>
       </div>
     </aside>
@@ -98,6 +99,80 @@
       </div>
       <form id="params-form" autocomplete="off"></form>
     </aside>
+
+    <section id="info-screen" class="info-screen" role="dialog" aria-modal="true" aria-labelledby="info-title" aria-hidden="true" hidden>
+      <button id="info-backdrop" class="info-backdrop" type="button" aria-label="Close info"></button>
+      <article class="info-card">
+        <button id="info-close-btn" class="info-close-btn" type="button" aria-label="Close info" title="Close info">
+          <svg
+            class="control-icon"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m6 6 12 12M18 6 6 18" />
+          </svg>
+        </button>
+
+        <h1 id="info-title">Generative Art Synthesizer</h1>
+        <p class="info-description">
+          A harness and control panel for a suite of generative drawing algorithms, with live parameter shaping and modulation.
+        </p>
+
+        <h2 class="info-section-title">Triple Slider Anatomy</h2>
+        <div id="info-diagram" class="info-diagram" aria-hidden="true">
+          <div class="info-demo-row">
+            <button class="info-demo-noise-btn" type="button" tabindex="-1" data-info-part="noise">
+              <span class="info-demo-bars">
+                <span class="info-demo-bar is-lit"></span>
+                <span class="info-demo-bar is-lit"></span>
+                <span class="info-demo-bar is-lit"></span>
+                <span class="info-demo-bar"></span>
+                <span class="info-demo-bar"></span>
+              </span>
+            </button>
+            <div class="info-demo-control">
+              <div class="info-demo-track" data-info-part="track">
+                <span class="info-demo-handle info-demo-handle-min" data-info-part="min"></span>
+                <span class="info-demo-handle info-demo-handle-current" data-info-part="current"></span>
+                <span class="info-demo-handle info-demo-handle-max" data-info-part="max"></span>
+              </div>
+            </div>
+          </div>
+
+          <p class="info-callout info-callout-noise info-callout-top" data-callout="noise">
+            Noise speed button:
+            <span>cycles modulation level from 0 to 5 bars.</span>
+          </p>
+          <p class="info-callout info-callout-track info-callout-top" data-callout="track">
+            Slider track:
+            <span>drag handles horizontally to set values.</span>
+          </p>
+          <p class="info-callout info-callout-min info-callout-bottom" data-callout="min">
+            Min bound:
+            <span>lower limit of the modulation range.</span>
+          </p>
+          <p class="info-callout info-callout-current info-callout-bottom" data-callout="current">
+            Current value:
+            <span>the active value used by the algorithm.</span>
+          </p>
+          <p class="info-callout info-callout-max info-callout-bottom" data-callout="max">
+            Max bound:
+            <span>upper limit of the modulation range.</span>
+          </p>
+        </div>
+
+        <p class="info-closing">
+          These sliders shape algorithm parameters in real time. Try widening ranges, shifting current values, and changing
+          modulation speed to see how each setting transforms the generated artwork.
+        </p>
+      </article>
+    </section>
 
     <script type="module" src="./src/main.js"></script>
   </body>
