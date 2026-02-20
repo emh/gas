@@ -2,12 +2,12 @@ import { INK_PARAMETER_DEFS } from "./plugins/ink-params.js";
 
 const DEFAULT_STEP = 1;
 const RANGE_EDGE_PADDING_PX = 0;
-const RANGE_BOUND_HANDLE_THICKNESS_PX = 3;
-const RANGE_CURRENT_HANDLE_DIAMETER_PX = 14;
-const RANGE_INTER_HANDLE_MARGIN_PX = 0;
+const RANGE_BOUND_HANDLE_THICKNESS_PX = 10;
+const RANGE_CURRENT_HANDLE_DIAMETER_PX = 8;
 const BASE_ITERATIONS_PER_SECOND = 5;
 const MAX_RUNS_PER_FRAME = 120;
 const PARAM_NOISE_SPEEDS = [0, 0.001, 0.005, 0.01, 0.1, 0.5];
+const PARAM_NOISE_LEVEL_COUNT = PARAM_NOISE_SPEEDS.length - 1;
 const DEFAULT_PARAM_NOISE_SPEED_INDEX = 0;
 const PARAM_NOISE_DOMAIN_STEP = 127.91831;
 const PARAM_SETTINGS_STORAGE_KEY = "gensynth:param-settings:v1";
@@ -66,17 +66,6 @@ function formatValue(value, step) {
 
   return value
     .toFixed(decimals)
-    .replace(/(\.\d*?[1-9])0+$/u, "$1")
-    .replace(/\.0+$/u, "");
-}
-
-function formatNoiseSpeed(speed) {
-  if (speed === 0) {
-    return "0";
-  }
-
-  return speed
-    .toFixed(3)
     .replace(/(\.\d*?[1-9])0+$/u, "$1")
     .replace(/\.0+$/u, "");
 }
@@ -177,6 +166,7 @@ export class GenSynthEngine {
     this.rangeControlEls = new Map();
     this.rangeFunctionButtonEls = new Map();
     this.paramFunctionStates = new Map();
+    this.activeCurrentHandleDrags = 0;
     this.nextNoiseDomainSeed = 1;
     this.persistedPluginSettings = this.loadPersistedPluginSettings();
     this.persistSaveTimer = 0;
@@ -844,6 +834,25 @@ export class GenSynthEngine {
   }
 
   normalizeRangeTriplet(def, value) {
+    if (!this.isRangeFunctionEnabled(def)) {
+      const minValue = def.min;
+      const maxValue = def.max;
+      let currentValue = clampNumber(
+        toNumber(value.current, def.defaultCurrent),
+        minValue,
+        maxValue,
+      );
+
+      currentValue = this.snapRangeValue(def, currentValue);
+      currentValue = clampNumber(currentValue, minValue, maxValue);
+
+      return {
+        min: minValue,
+        current: currentValue,
+        max: maxValue,
+      };
+    }
+
     let minValue = clampNumber(toNumber(value.min, def.defaultMin), def.min, def.max);
     let maxValue = clampNumber(toNumber(value.max, def.defaultMax), def.min, def.max);
 
@@ -889,6 +898,10 @@ export class GenSynthEngine {
     return def?.type === "range" && def.allowFunction !== false;
   }
 
+  canAdjustRangeBounds(def) {
+    return def?.type === "bounds" || this.isRangeFunctionEnabled(def);
+  }
+
   normalizeFunctionStates() {
     const nextStates = new Map();
     const usedDomains = new Set();
@@ -923,6 +936,17 @@ export class GenSynthEngine {
     button.type = "button";
     button.className = "param-fn-btn";
     button.dataset.key = key;
+
+    const bars = document.createElement("span");
+    bars.className = "param-fn-bars";
+    bars.setAttribute("aria-hidden", "true");
+    for (let i = 0; i < PARAM_NOISE_LEVEL_COUNT; i += 1) {
+      const bar = document.createElement("span");
+      bar.className = "param-fn-bar";
+      bars.append(bar);
+    }
+    button.append(bars);
+
     button.addEventListener("click", () => {
       this.cycleParamNoiseSpeed(key);
     });
@@ -957,16 +981,31 @@ export class GenSynthEngine {
       noiseSpeedIndex: DEFAULT_PARAM_NOISE_SPEED_INDEX,
       noiseDomain: 0,
     };
-    const noiseSpeed = PARAM_NOISE_SPEEDS[this.normalizeNoiseSpeedIndex(state.noiseSpeedIndex)];
-    const speedLabel = formatNoiseSpeed(noiseSpeed);
-    button.textContent = speedLabel;
-    button.classList.toggle("is-active", noiseSpeed > 0);
-    button.dataset.speed = speedLabel;
-    button.setAttribute("aria-label", `${label} noise speed ${speedLabel}`);
-    button.title = `noise speed ${speedLabel}`;
+    const noiseSpeedIndex = this.normalizeNoiseSpeedIndex(state.noiseSpeedIndex);
+    const level = clampNumber(noiseSpeedIndex, 0, PARAM_NOISE_LEVEL_COUNT);
+    button.classList.toggle("is-active", level > 0);
+    button.dataset.level = String(level);
+
+    const bars = button.querySelectorAll(".param-fn-bar");
+    bars.forEach((bar, index) => {
+      bar.classList.toggle("is-lit", index < level);
+    });
+
+    if (level === 0) {
+      button.setAttribute("aria-label", `${label} modulation off`);
+      button.title = "modulation off";
+      return;
+    }
+
+    button.setAttribute("aria-label", `${label} modulation level ${level} of ${PARAM_NOISE_LEVEL_COUNT}`);
+    button.title = `modulation level ${level} of ${PARAM_NOISE_LEVEL_COUNT}`;
   }
 
   applyParameterFunctions() {
+    if (this.activeCurrentHandleDrags > 0) {
+      return false;
+    }
+
     let changed = false;
 
     for (const def of this.paramDefs.values()) {
@@ -1052,9 +1091,14 @@ export class GenSynthEngine {
           }
         });
 
-        const minHandle = this.createRangeHandle(def.key, "min", `${def.label} minimum`);
-        const maxHandle = this.createRangeHandle(def.key, "max", `${def.label} maximum`);
-        track.append(minHandle, maxHandle);
+        const showBoundHandles = this.canAdjustRangeBounds(def);
+        let minHandle = null;
+        let maxHandle = null;
+        if (showBoundHandles) {
+          minHandle = this.createRangeHandle(def.key, "min", `${def.label} minimum`);
+          maxHandle = this.createRangeHandle(def.key, "max", `${def.label} maximum`);
+          track.append(minHandle, maxHandle);
+        }
 
         let currentHandle = null;
         if (def.type === "range") {
@@ -1171,6 +1215,10 @@ export class GenSynthEngine {
       return "current";
     }
 
+    if (def.type === "range" && !this.canAdjustRangeBounds(def)) {
+      return "current";
+    }
+
     const rect = controls.track.getBoundingClientRect();
     if (rect.width <= 0) {
       return def.type === "range" ? "current" : "min";
@@ -1225,20 +1273,41 @@ export class GenSynthEngine {
   }
 
   startRangeDrag(key, bound, event) {
+    const def = this.paramDefs.get(key);
+    if (!def || (def.type !== "range" && def.type !== "bounds")) {
+      return;
+    }
+
+    if ((bound === "min" || bound === "max") && !this.canAdjustRangeBounds(def)) {
+      return;
+    }
+
     if (event.button !== undefined && event.button !== 0) {
       return;
     }
 
     event.preventDefault();
 
+    if (bound === "current") {
+      this.activeCurrentHandleDrags += 1;
+    }
+
+    let ended = false;
     const move = (moveEvent) => {
       this.dragRangeHandle(key, bound, moveEvent.clientX);
     };
 
     const end = () => {
+      if (ended) {
+        return;
+      }
+      ended = true;
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", end);
       window.removeEventListener("pointercancel", end);
+      if (bound === "current" && this.activeCurrentHandleDrags > 0) {
+        this.activeCurrentHandleDrags -= 1;
+      }
     };
 
     window.addEventListener("pointermove", move);
@@ -1255,6 +1324,10 @@ export class GenSynthEngine {
     }
 
     if (bound === "current" && def.type !== "range") {
+      return;
+    }
+
+    if ((bound === "min" || bound === "max") && !this.canAdjustRangeBounds(def)) {
       return;
     }
 
@@ -1294,6 +1367,10 @@ export class GenSynthEngine {
       return;
     }
 
+    if ((bound === "min" || bound === "max") && !this.canAdjustRangeBounds(def)) {
+      return;
+    }
+
     const rect = controls.track.getBoundingClientRect();
     if (rect.width <= 0) {
       return;
@@ -1313,6 +1390,10 @@ export class GenSynthEngine {
     }
 
     if (bound === "current" && def.type !== "range") {
+      return;
+    }
+
+    if ((bound === "min" || bound === "max") && !this.canAdjustRangeBounds(def)) {
       return;
     }
 
@@ -1371,10 +1452,12 @@ export class GenSynthEngine {
 
           if (this.shouldShowInkSwatch(def)) {
             const swatchColor = this.inkSwatchColor();
+            controls.tooltip.classList.add("has-swatch");
             controls.tooltipSwatchRow.hidden = false;
             controls.tooltipSwatch.style.background = swatchColor;
             controls.tooltipSwatchLabel.textContent = swatchColor;
           } else {
+            controls.tooltip.classList.remove("has-swatch");
             controls.tooltipSwatchRow.hidden = true;
             controls.tooltipSwatchLabel.textContent = "";
           }
@@ -1434,17 +1517,17 @@ export class GenSynthEngine {
     const maxLeft = Math.max(0, effectiveWidth - RANGE_BOUND_HANDLE_THICKNESS_PX);
 
     if (bound === "min") {
-      const left = clampNumber(semanticX, 0, maxLeft);
-      handle.style.left = `${left}px`;
-      return;
-    }
-
-    if (bound === "max") {
       const left = clampNumber(
         semanticX - RANGE_BOUND_HANDLE_THICKNESS_PX,
         0,
         maxLeft,
       );
+      handle.style.left = `${left}px`;
+      return;
+    }
+
+    if (bound === "max") {
+      const left = clampNumber(semanticX, 0, maxLeft);
       handle.style.left = `${left}px`;
       return;
     }
@@ -1460,23 +1543,12 @@ export class GenSynthEngine {
 
   updateCurrentHandleClip(def, controls, value, trackWidth) {
     const currentHandle = controls.currentHandle;
-    const diameter = RANGE_CURRENT_HANDLE_DIAMETER_PX;
-    const radius = diameter / 2;
+    if (!currentHandle) {
+      return;
+    }
 
-    const currentCenterX = this.valueToTrackX(def, value.current, trackWidth);
-    const minEdgeX = this.valueToTrackX(def, value.min, trackWidth);
-    const maxEdgeX = this.valueToTrackX(def, value.max, trackWidth);
-
-    const leftBound = minEdgeX + RANGE_INTER_HANDLE_MARGIN_PX;
-    const rightBound = maxEdgeX - RANGE_INTER_HANDLE_MARGIN_PX;
-
-    const circleLeft = currentCenterX - radius;
-    const circleRight = currentCenterX + radius;
-
-    const leftClip = clampNumber(leftBound - circleLeft, 0, diameter);
-    const rightClip = clampNumber(circleRight - rightBound, 0, diameter);
-
-    currentHandle.style.clipPath = `inset(0 ${rightClip}px 0 ${leftClip}px)`;
+    // Keep current fully visible in front; min/max remain visible at left/right via width + stacking.
+    currentHandle.style.clipPath = "none";
   }
 
   shouldShowInkSwatch(def) {
@@ -1535,7 +1607,7 @@ export class GenSynthEngine {
     }
 
     const viewportPadding = 8;
-    const yOffset = 14;
+    const yOffset = 10;
     const tooltipHeight = tooltip.offsetHeight || 0;
     const tooltipWidth = tooltip.offsetWidth || 0;
 
@@ -1543,7 +1615,9 @@ export class GenSynthEngine {
     const maxLeft = Math.max(viewportPadding, window.innerWidth - viewportPadding - tooltipWidth);
     const left = clampNumber(centeredLeft, viewportPadding, maxLeft);
 
-    const topCandidate = anchorY + yOffset;
+    const topAbove = anchorY - tooltipHeight - yOffset;
+    const topBelow = anchorY + yOffset;
+    const topCandidate = topAbove >= viewportPadding ? topAbove : topBelow;
     const maxTop = Math.max(viewportPadding, window.innerHeight - viewportPadding - tooltipHeight);
     const top = clampNumber(topCandidate, viewportPadding, maxTop);
 

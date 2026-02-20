@@ -1,18 +1,30 @@
 :root {
   color-scheme: light;
-  --panel: #ffffff;
-  --border: #000000;
-  --text: #111111;
-  --muted: #5f5f5f;
-  --btn: #ffffff;
-  --btn-hover: #f5f5f5;
-  --btn-disabled: #dcdcdc;
-  --input-bg: #ffffff;
-  --slider-row-width: 320px;
+  --bg-top: #ffffff;
+  --bg-bottom: #f2f4f6;
+  --bg-rim: #e9edf1;
+  --panel: rgb(246 247 248 / 94%);
+  --panel-border: #cfd5db;
+  --panel-highlight: rgb(255 255 255 / 90%);
+  --panel-shadow: rgb(0 0 0 / 12%);
+  --text: #1f252b;
+  --muted: #66707a;
+  --btn-top: #fbfcfd;
+  --btn-bottom: #e8ecf0;
+  --btn-hover-top: #ffffff;
+  --btn-hover-bottom: #edf1f4;
+  --btn-active-top: #e5eaee;
+  --btn-active-bottom: #dbe1e6;
+  --btn-disabled: #d6dce2;
+  --input-bg: #fdfdfe;
+  --track: #afb7bf;
+  --focus: #707a84;
+  --mod-bar-off: #98a2ab;
+  --mod-bar-on: #ff9a3a;
+  --slider-row-width: 332px;
   --param-row-gap: 8px;
-  --fn-btn-width: 56px;
-  --slider-track: #9a9a9a;
-  --control-radius: 6px;
+  --fn-btn-width: 40px;
+  --control-radius: 7px;
 }
 
 * {
@@ -25,9 +37,20 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-family: "Aldrich", "Segoe UI", sans-serif;
   color: var(--text);
-  background: #ffffff;
+  background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -2;
+  background:
+    radial-gradient(120% 95% at 82% 8%, rgb(255 255 255 / 70%) 0%, transparent 48%),
+    linear-gradient(180deg, transparent 0%, rgb(233 237 241 / 55%) 100%);
 }
 
 #stage {
@@ -36,13 +59,38 @@ body {
   width: 100vw;
   height: 100vh;
   display: block;
+  background:
+    radial-gradient(130% 120% at 14% 10%, #ffffff 0%, #fbfcfd 45%, #f3f6f8 100%),
+    linear-gradient(180deg, var(--bg-top) 0%, var(--bg-rim) 100%);
+}
+
+.hud,
+.control-panel {
+  position: fixed;
+  z-index: 11;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgb(251 252 253 / 96%) 0%, var(--panel) 100%);
+  box-shadow:
+    0 8px 24px var(--panel-shadow),
+    0 2px 5px rgb(0 0 0 / 8%),
+    inset 0 1px 0 var(--panel-highlight),
+    inset 0 -1px 0 rgb(191 199 206 / 65%);
+}
+
+.hud::before,
+.control-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgb(255 255 255 / 70%);
+  pointer-events: none;
 }
 
 .hud {
-  position: fixed;
   left: 18px;
   top: 18px;
-  bottom: auto;
   width: fit-content;
   max-width: calc(100vw - 24px);
   max-height: calc(100vh - 36px);
@@ -50,24 +98,14 @@ body {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: 14px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  box-shadow: 0 2px 12px rgb(0 0 0 / 10%);
+  padding: 12px;
 }
 
 .control-panel {
-  position: fixed;
   left: 50%;
   bottom: 18px;
   transform: translateX(-50%);
-  z-index: 11;
-  padding: 8px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--panel);
-  box-shadow: 0 2px 12px rgb(0 0 0 / 10%);
+  padding: 10px;
 }
 
 .hud-header {
@@ -80,55 +118,32 @@ body {
 
 #algo-select {
   appearance: none;
-  border: 1px solid #000000;
-  border-radius: var(--control-radius);
-  padding: 6px 9px;
-  padding-right: 30px;
-  color: #000000;
-  background: #ffffff;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7 5 6 5-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 9px center;
-  background-size: 12px 12px;
-  font-size: 0.86rem;
   width: 100%;
   min-width: 0;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--control-radius);
+  padding: 8px 10px;
+  padding-right: 30px;
+  color: var(--text);
+  background-color: var(--input-bg);
+  background-image:
+    linear-gradient(180deg, rgb(255 255 255 / 78%) 0%, rgb(237 241 244 / 36%) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='%235c6771' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 7 5 6 5-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center center, right 9px center;
+  background-size: auto, 12px 12px;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 80%),
+    inset 0 -1px 0 rgb(201 208 214 / 85%);
+  font-size: 0.8rem;
+  letter-spacing: 0.03em;
   text-align: left;
   text-align-last: left;
-  transition: background 120ms ease;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
 #algo-select:hover {
-  background-color: var(--btn-hover);
-}
-
-#algo-select:focus {
-  outline: 1px solid #000000;
-}
-
-.hud-toggle {
-  appearance: none;
-  border: 1px solid #000000;
-  border-radius: var(--control-radius);
-  width: 30px;
-  height: 30px;
-  min-width: 30px;
-  padding: 0;
-  color: #000000;
-  background: var(--btn);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 120ms ease;
-}
-
-.hud-toggle:hover {
-  background: var(--btn-hover);
-}
-
-.hud-toggle:focus {
-  outline: 1px solid #000000;
+  border-color: #b5bec7;
 }
 
 .hud-collapsed {
@@ -142,31 +157,49 @@ body {
 .controls {
   display: flex;
   flex-direction: row;
+  align-items: center;
   gap: 8px;
 }
 
-.controls button {
+.controls button,
+.hud-toggle,
+.param-fn-btn {
   appearance: none;
-  border: 1px solid #000000;
+  border: 1px solid var(--panel-border);
   border-radius: var(--control-radius);
+  color: var(--text);
+  background: linear-gradient(180deg, var(--btn-top), var(--btn-bottom));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 88%),
+    inset 0 -1px 0 rgb(186 193 200 / 90%),
+    0 1px 3px rgb(0 0 0 / 12%);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 80ms ease;
+}
+
+.controls button,
+.hud-toggle {
   width: 34px;
   height: 34px;
   padding: 0;
-  color: #000000;
-  background: var(--btn);
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 120ms ease;
 }
 
 .controls .speed-btn {
   width: auto;
-  min-width: 44px;
-  padding: 0 10px;
-  font-size: 0.8rem;
-  font-weight: 600;
+  min-width: 46px;
+  padding: 0 12px;
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  font-family: "Fragment Mono", ui-monospace, monospace;
+  font-weight: 500;
+  text-transform: uppercase;
 }
 
 .controls button:not(.speed-btn) {
@@ -174,18 +207,49 @@ body {
   height: 34px;
 }
 
+.controls button:hover:not(:disabled),
+.hud-toggle:hover,
+.param-fn-btn:hover {
+  border-color: #b6bec6;
+  background: linear-gradient(180deg, var(--btn-hover-top), var(--btn-hover-bottom));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 94%),
+    inset 0 -1px 0 rgb(186 194 201 / 85%),
+    0 2px 6px rgb(0 0 0 / 13%);
+}
+
+.controls button:active:not(:disabled),
+.hud-toggle:active,
+.param-fn-btn:active {
+  transform: translateY(1px);
+  background: linear-gradient(180deg, var(--btn-active-top), var(--btn-active-bottom));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 55%),
+    inset 0 -1px 0 rgb(174 183 191 / 95%),
+    0 1px 2px rgb(0 0 0 / 12%);
+}
+
+.controls button:disabled {
+  background: linear-gradient(180deg, #dde3e8, var(--btn-disabled));
+  border-color: #c5ccd3;
+  color: #8a929a;
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
 .fps-indicator {
-  min-width: 56px;
+  min-width: 62px;
   height: 34px;
   padding: 0 6px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: "Fragment Mono", ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
   user-select: none;
 }
 
@@ -193,22 +257,10 @@ body {
   display: none;
 }
 
-.controls button:hover:not(:disabled) {
-  background: var(--btn-hover);
-}
-
-.controls button:disabled {
-  background: var(--btn-disabled);
-  border-color: #8b8b8b;
-  color: #707070;
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
 .control-icon {
   width: 18px;
   height: 18px;
-  stroke-width: 2;
+  stroke-width: 1.9;
 }
 
 #params-form {
@@ -231,15 +283,17 @@ body {
 .param-separator {
   width: 100%;
   height: 1px;
-  margin: 2px 0;
-  background: #b5b5b5;
+  margin: 3px 0;
+  background: linear-gradient(to right, transparent 0%, #ced4da 8%, #ced4da 92%, transparent 100%);
 }
 
 .param-label {
-  font-size: 0.78rem;
-  line-height: 1.2;
-  color: #000000;
-  margin: 0 0 4px;
+  margin: 0 0 5px;
+  font-family: "Fragment Mono", ui-monospace, monospace;
+  font-size: 0.66rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .param-control-row {
@@ -254,49 +308,75 @@ body {
 }
 
 .param-fn-btn {
-  appearance: none;
   width: var(--fn-btn-width);
   min-width: var(--fn-btn-width);
-  height: 30px;
+  height: 22px;
   padding: 0;
-  border: 1px solid #000000;
-  border-radius: var(--control-radius);
-  color: #000000;
-  background: #ffffff;
-  cursor: pointer;
-  transition: background 120ms ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
+  border-color: #c4ccd3;
+  background: linear-gradient(180deg, #f7f9fb, #e9edf1);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 92%),
+    inset 0 -1px 0 rgb(187 195 203 / 88%),
+    0 1px 2px rgb(0 0 0 / 10%);
 }
 
 .param-fn-btn:hover {
-  background: var(--btn-hover);
+  border-color: #b8c1c9;
+  background: linear-gradient(180deg, #fafbfd, #edf2f5);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 94%),
+    inset 0 -1px 0 rgb(187 195 203 / 86%),
+    0 1px 3px rgb(0 0 0 / 10%);
+}
+
+.param-fn-btn:active {
+  transform: translateY(1px);
+  background: linear-gradient(180deg, #e9edf1, #dfe5ea);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 64%),
+    inset 0 -1px 0 rgb(172 181 190 / 90%),
+    0 1px 2px rgb(0 0 0 / 8%);
+}
+
+.param-fn-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  height: 12px;
+}
+
+.param-fn-bar {
+  width: 3px;
+  height: 10px;
+  border-radius: 1px;
+  background: var(--mod-bar-off);
+  transition: background-color 120ms ease;
 }
 
 .param-fn-btn.is-active {
-  background: #000000;
-  color: #ffffff;
+  border-color: #b7c0c8;
 }
 
-.param-fn-btn.is-active:hover {
-  background: #1a1a1a;
+.param-fn-bar.is-lit {
+  background: var(--mod-bar-on);
 }
 
 .param-row input {
-  border: 1px solid #000000;
-  border-radius: 0;
-  padding: 7px 9px;
-  color: #111111;
-  background: var(--input-bg);
-  font-size: 0.92rem;
-}
-
-.param-row input:focus {
-  outline: 1px solid #000000;
+  width: 100%;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--control-radius);
+  padding: 6px 10px;
+  color: var(--text);
+  background: linear-gradient(180deg, rgb(255 255 255 / 86%), rgb(247 249 251 / 92%));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 92%),
+    inset 0 -1px 0 rgb(201 207 214 / 82%);
+  font-size: 0.82rem;
+  font-family: "Fragment Mono", ui-monospace, monospace;
 }
 
 .tri-control {
@@ -305,7 +385,7 @@ body {
   align-items: center;
   width: calc(var(--slider-row-width) - var(--fn-btn-width) - var(--param-row-gap));
   min-height: 30px;
-  padding: 0 4px;
+  padding: 0 5px;
 }
 
 .tri-control-bounds {
@@ -318,36 +398,32 @@ body {
   height: 30px;
   margin: 0;
   touch-action: none;
-  background: linear-gradient(to right, var(--slider-track), var(--slider-track));
-  background-repeat: no-repeat;
-  background-position: center center;
-  background-size: 100% 1px;
+  background:
+    linear-gradient(to right, #b9c1c8, #b9c1c8) center/100% 1px no-repeat,
+    linear-gradient(to right, transparent 0%, rgb(164 172 181 / 45%) 50%, transparent 100%) center/100% 1px no-repeat;
 }
 
 .tri-control-bounds .tri-track {
   width: calc(var(--slider-row-width) - 12px);
 }
 
-.tri-track::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 1px;
-  height: 14px;
-  transform: translateY(-50%);
-  background: var(--slider-track);
-}
-
+.tri-track::before,
 .tri-track::after {
   content: "";
   position: absolute;
-  right: 0;
   top: 50%;
   width: 1px;
-  height: 14px;
+  height: 13px;
   transform: translateY(-50%);
-  background: var(--slider-track);
+  background: var(--track);
+}
+
+.tri-track::before {
+  left: 0;
+}
+
+.tri-track::after {
+  right: 0;
 }
 
 .tri-handle {
@@ -360,7 +436,6 @@ body {
   top: 50%;
   transform: translateY(-50%);
   border: 0;
-  border-radius: 0;
   background: transparent;
   cursor: ew-resize;
 }
@@ -373,52 +448,60 @@ body {
   transform: translate(-50%, -50%);
 }
 
-.tri-handle:focus {
-  outline: 1px solid #000000;
-  outline-offset: 1px;
-}
-
 .tri-handle-min,
 .tri-handle-max {
   z-index: 2;
-  width: 3px;
+  width: 10px;
   height: 22px;
 }
 
 .tri-handle-min::before,
 .tri-handle-max::before {
-  width: 3px;
+  width: 8px;
   height: 14px;
-  background: #000000;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #9aa4ae, #66717b);
+  box-shadow: 0 0 0 1px rgb(102 113 123 / 62%);
 }
 
 .tri-handle-current {
-  z-index: 3;
-  width: 14px;
-  height: 14px;
+  z-index: 4;
+  width: 8px;
+  height: 22px;
 }
 
 .tri-handle-current::before {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #000000;
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #f4f7f9, #95a0aa);
+  box-shadow:
+    0 0 0 1px rgb(111 121 129 / 58%),
+    0 1px 2px rgb(0 0 0 / 14%);
 }
 
 .tri-tooltip {
   position: fixed;
   left: 0;
   top: 0;
-  z-index: 10;
+  z-index: 12;
   opacity: 0;
   pointer-events: none;
   white-space: normal;
-  font-size: 0.74rem;
+  font-family: "Fragment Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
   line-height: 1.35;
-  color: #000000;
-  background: #ffffff;
-  border: 1px solid #000000;
+  color: #2f3942;
+  background: rgb(247 249 251 / 96%);
+  border: 1px solid #c6ced5;
+  border-radius: 4px;
   padding: 4px 6px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 14%);
+}
+
+.tri-tooltip.has-swatch {
+  padding-right: 24px;
+  padding-bottom: 20px;
 }
 
 .tri-tooltip-text {
@@ -426,22 +509,27 @@ body {
 }
 
 .tri-tooltip-swatch-row {
-  margin-top: 4px;
-  display: flex;
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 0;
+}
+
+.tri-tooltip-swatch-row[hidden] {
+  display: none;
 }
 
 .tri-tooltip-swatch {
   width: 12px;
   height: 12px;
-  border: 1px solid #000000;
-  background: #000000;
+  border: 1px solid #c0c8cf;
+  background: #ffffff;
 }
 
 .tri-tooltip-swatch-label {
-  font-size: 0.7rem;
-  line-height: 1;
+  display: none;
 }
 
 .tri-control:hover .tri-tooltip,
@@ -449,36 +537,55 @@ body {
   opacity: 1;
 }
 
+#algo-select:focus-visible,
+.hud-toggle:focus-visible,
+.controls button:focus-visible,
+.param-fn-btn:focus-visible,
+.param-row input:focus-visible,
+.tri-handle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+#algo-select:focus,
+.hud-toggle:focus,
+.controls button:focus,
+.param-fn-btn:focus,
+.param-row input:focus,
+.tri-handle:focus {
+  outline: none;
+}
+
 @media (max-width: 760px) {
   :root {
-    --slider-row-width: 280px;
-    --fn-btn-width: 52px;
-  }
-
-  .control-panel {
-    left: 50%;
-    bottom: 12px;
-    transform: translateX(-50%);
+    --slider-row-width: 286px;
+    --fn-btn-width: 38px;
+    --param-row-gap: 7px;
   }
 
   .hud {
     left: 12px;
     top: 12px;
-    right: auto;
-    bottom: auto;
     max-width: calc(100vw - 24px);
-    max-height: 55vh;
+    max-height: 56vh;
+    padding: 10px;
   }
 
-  .controls button {
+  .control-panel {
+    bottom: 12px;
+    padding: 8px;
+  }
+
+  .controls button,
+  .hud-toggle {
     width: 32px;
     height: 32px;
   }
 
   .controls .speed-btn {
-    width: auto;
     min-width: 42px;
-    padding: 0 8px;
+    padding: 0 9px;
+    font-size: 0.68rem;
   }
 
   #params-form {
@@ -489,11 +596,24 @@ body {
     min-height: 28px;
   }
 
-  .param-fn-btn {
+  .tri-track {
     height: 28px;
   }
 
-  .tri-track {
-    height: 28px;
+  .param-fn-btn {
+    height: 22px;
+  }
+
+  .fps-indicator {
+    min-width: 54px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .controls button,
+  .hud-toggle,
+  .param-fn-btn,
+  #algo-select {
+    transition: none;
   }
 }
