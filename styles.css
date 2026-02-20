@@ -189,6 +189,10 @@ body {
   user-select: none;
 }
 
+.fps-indicator[hidden] {
+  display: none;
+}
+
 .controls button:hover:not(:disabled) {
   background: var(--btn-hover);
 }
