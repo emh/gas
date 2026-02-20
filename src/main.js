@@ -33,6 +33,7 @@ let speedIndex = 0;
 let fpsRafId = 0;
 let fpsSampleStartMs = 0;
 let fpsFrameCount = 0;
+let fpsVisible = false;
 
 const plugins = [
   circlesPlugin,
@@ -186,6 +187,30 @@ function stopFpsMonitor() {
   fpsFrameCount = 0;
 }
 
+function setFpsVisible(visible) {
+  fpsVisible = Boolean(visible);
+
+  if (fpsIndicator) {
+    fpsIndicator.hidden = !fpsVisible;
+  }
+
+  if (fpsVisible) {
+    startFpsMonitor();
+    return;
+  }
+
+  stopFpsMonitor();
+  setFpsUi(Number.NaN);
+}
+
+function isTypingTarget(target) {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+
+  return target.closest("input, textarea, select, [contenteditable='true']") !== null;
+}
+
 function makeSnapshotFilename() {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -267,7 +292,7 @@ engine.init();
 setRunUi(engine.running);
 setParamsPanelCollapsed(false);
 setPlaybackSpeed(0);
-startFpsMonitor();
+setFpsVisible(false);
 
 playPauseBtn?.addEventListener("click", () => {
   if (engine.running) {
@@ -301,6 +326,20 @@ speedBtn?.addEventListener("click", () => {
 
 cameraBtn?.addEventListener("click", () => {
   downloadCanvasSnapshot();
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.repeat || isTypingTarget(event.target)) {
+    return;
+  }
+
+  const isQuestionKey = event.key === "?" || (event.code === "Slash" && event.shiftKey);
+  if (!isQuestionKey) {
+    return;
+  }
+
+  event.preventDefault();
+  setFpsVisible(!fpsVisible);
 });
 
 window.addEventListener("beforeunload", () => {
