@@ -36,6 +36,7 @@ const SNAPSHOT_BACKGROUND = "#ffffff";
 const SELECTED_PLUGIN_STORAGE_KEY = "gensynth:selected-plugin:v1";
 const FPS_SAMPLE_INTERVAL_MS = 500;
 const SHARE_QUERY_PARAM = "share";
+const SHARE_HASH_PREFIX = "share.";
 const SHARE_SCHEMA_VERSION = 1;
 const SHARE_FEEDBACK_DURATION_MS = 1800;
 
@@ -464,17 +465,51 @@ function createShareUrl() {
   }
 
   const url = new URL(window.location.href);
-  url.searchParams.set(SHARE_QUERY_PARAM, encoded);
+  url.searchParams.delete(SHARE_QUERY_PARAM);
+  url.hash = `${SHARE_HASH_PREFIX}${encoded}`;
   return url.toString();
 }
 
-function clearShareParamFromAddress() {
+function readSharedPayloadFromAddress() {
   const url = new URL(window.location.href);
-  if (!url.searchParams.has(SHARE_QUERY_PARAM)) {
+  const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
+  if (hash.startsWith(SHARE_HASH_PREFIX)) {
+    return {
+      encoded: hash.slice(SHARE_HASH_PREFIX.length),
+      source: "hash",
+    };
+  }
+
+  const queryPayload = url.searchParams.get(SHARE_QUERY_PARAM);
+  if (typeof queryPayload === "string" && queryPayload.length > 0) {
+    return {
+      encoded: queryPayload,
+      source: "query",
+    };
+  }
+
+  return null;
+}
+
+function clearShareParamFromAddress(source) {
+  const url = new URL(window.location.href);
+  let changed = false;
+
+  if (source === "hash") {
+    const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
+    if (hash.startsWith(SHARE_HASH_PREFIX)) {
+      url.hash = "";
+      changed = true;
+    }
+  } else if (source === "query" && url.searchParams.has(SHARE_QUERY_PARAM)) {
+    url.searchParams.delete(SHARE_QUERY_PARAM);
+    changed = true;
+  }
+
+  if (!changed) {
     return;
   }
 
-  url.searchParams.delete(SHARE_QUERY_PARAM);
   const cleaned = `${url.pathname}${url.search}${url.hash}`;
   window.history.replaceState({}, "", cleaned);
 }
@@ -497,14 +532,13 @@ async function copyShareUrlToClipboard() {
 }
 
 function applySharedStateFromUrl() {
-  const url = new URL(window.location.href);
-  const encoded = url.searchParams.get(SHARE_QUERY_PARAM);
-  if (!encoded) {
+  const shared = readSharedPayloadFromAddress();
+  if (!shared?.encoded) {
     return;
   }
 
   try {
-    const payload = decodeSharePayload(encoded);
+    const payload = decodeSharePayload(shared.encoded);
     if (!payload) {
       return;
     }
@@ -530,7 +564,7 @@ function applySharedStateFromUrl() {
       engine.applyCurrentPluginSettings(payload.settings);
     }
   } finally {
-    clearShareParamFromAddress();
+    clearShareParamFromAddress(shared.source);
   }
 }
 
