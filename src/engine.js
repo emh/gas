@@ -83,6 +83,10 @@ function clampNumber(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function approximatelyEqual(a, b, epsilon = 1e-6) {
+  return Math.abs(a - b) <= epsilon;
+}
+
 function snapToStep(value, min, step) {
   if (!(step > 0)) {
     return value;
@@ -477,6 +481,55 @@ export class GenSynthEngine {
     return this.serializeCurrentPluginSettings();
   }
 
+  getCompactPluginSettings() {
+    const params = [];
+    const functions = [];
+    const defs = Array.from(this.paramDefs.values());
+
+    defs.forEach((def, index) => {
+      const value = this.paramValues[def.key];
+
+      if (def.type === "range" && isRangeValue(value)) {
+        const minChanged = !approximatelyEqual(value.min, def.defaultMin);
+        const maxChanged = !approximatelyEqual(value.max, def.defaultMax);
+        const snappedCurrent = this.snapRangeValue(def, value.current);
+        const currentChanged = !approximatelyEqual(snappedCurrent, def.defaultCurrent);
+
+        if (minChanged || maxChanged) {
+          params.push([index, value.min, snappedCurrent, value.max]);
+        } else if (currentChanged) {
+          params.push([index, snappedCurrent]);
+        }
+      } else if (def.type === "bounds" && isBoundsValue(value)) {
+        const minChanged = !approximatelyEqual(value.min, def.defaultMin);
+        const maxChanged = !approximatelyEqual(value.max, def.defaultMax);
+        if (minChanged || maxChanged) {
+          params.push([index, value.min, value.max]);
+        }
+      } else if (def.type === "number" && Number.isFinite(value)) {
+        const clamped = clampNumber(value, def.min, def.max);
+        if (!approximatelyEqual(clamped, def.defaultValue)) {
+          params.push([index, clamped]);
+        }
+      }
+
+      if (!this.isRangeFunctionEnabled(def)) {
+        return;
+      }
+
+      const state = this.paramFunctionStates.get(def.key);
+      const speedIndex = this.normalizeNoiseSpeedIndex(state?.noiseSpeedIndex ?? 0);
+      if (speedIndex > 0) {
+        functions.push([index, speedIndex]);
+      }
+    });
+
+    return {
+      p: params,
+      f: functions,
+    };
+  }
+
   persistCurrentPluginSettings({ immediate = false } = {}) {
     const pluginId = this.plugin?.id;
     if (!pluginId) {
@@ -512,6 +565,148 @@ export class GenSynthEngine {
     }
 
     this.applyPluginSettingsObject(settings);
+    this.syncHudValues();
+    if (persist) {
+      this.persistCurrentPluginSettings();
+    }
+
+    return true;
+  }
+
+  resetCurrentPluginSettingsToDefaults() {
+    for (const def of this.paramDefs.values()) {
+      if (def.type === "range") {
+        this.paramValues[def.key] = this.normalizeRangeTriplet(def, {
+          min: def.defaultMin,
+          current: def.defaultCurrent,
+          max: def.defaultMax,
+        });
+        continue;
+      }
+
+      if (def.type === "bounds") {
+        this.paramValues[def.key] = this.normalizeBoundsPair(def, {
+          min: def.defaultMin,
+          max: def.defaultMax,
+        });
+        continue;
+      }
+
+      this.paramValues[def.key] = def.defaultValue;
+    }
+
+    for (const def of this.paramDefs.values()) {
+      if (!this.isRangeFunctionEnabled(def)) {
+        continue;
+      }
+
+      const state = this.paramFunctionStates.get(def.key);
+      if (!state) {
+        this.paramFunctionStates.set(def.key, {
+          noiseSpeedIndex: 0,
+          noiseDomain: this.createNoiseDomain(),
+        });
+        continue;
+      }
+
+      state.noiseSpeedIndex = 0;
+      this.paramFunctionStates.set(def.key, state);
+    }
+  }
+
+  applyCompactPluginSettings(compactSettings, { persist = true } = {}) {
+    if (!compactSettings || typeof compactSettings !== "object") {
+      return false;
+    }
+
+    this.resetCurrentPluginSettingsToDefaults();
+    const defs = Array.from(this.paramDefs.values());
+
+    const compactParams = Array.isArray(compactSettings.p)
+      ? compactSettings.p
+      : [];
+
+    for (const entry of compactParams) {
+      if (!Array.isArray(entry) || entry.length < 2) {
+        continue;
+      }
+
+      const index = Number(entry[0]);
+      if (!Number.isInteger(index) || index < 0 || index >= defs.length) {
+        continue;
+      }
+
+      const def = defs[index];
+      if (!def) {
+        continue;
+      }
+
+      if (def.type === "range") {
+        const hasBounds = entry.length >= 4;
+        if (hasBounds) {
+          this.paramValues[def.key] = this.normalizeRangeTriplet(def, {
+            min: toNumber(entry[1], def.defaultMin),
+            current: toNumber(entry[2], def.defaultCurrent),
+            max: toNumber(entry[3], def.defaultMax),
+          });
+        } else {
+          this.paramValues[def.key] = this.normalizeRangeTriplet(def, {
+            min: def.defaultMin,
+            current: toNumber(entry[1], def.defaultCurrent),
+            max: def.defaultMax,
+          });
+        }
+        continue;
+      }
+
+      if (def.type === "bounds") {
+        if (entry.length >= 3) {
+          this.paramValues[def.key] = this.normalizeBoundsPair(def, {
+            min: toNumber(entry[1], def.defaultMin),
+            max: toNumber(entry[2], def.defaultMax),
+          });
+        }
+        continue;
+      }
+
+      if (def.type === "number") {
+        const next = toNumber(entry[1], def.defaultValue);
+        this.paramValues[def.key] = clampNumber(next, def.min, def.max);
+      }
+    }
+
+    const compactFunctions = Array.isArray(compactSettings.f)
+      ? compactSettings.f
+      : [];
+
+    for (const entry of compactFunctions) {
+      if (!Array.isArray(entry) || entry.length < 2) {
+        continue;
+      }
+
+      const index = Number(entry[0]);
+      if (!Number.isInteger(index) || index < 0 || index >= defs.length) {
+        continue;
+      }
+
+      const def = defs[index];
+      if (!this.isRangeFunctionEnabled(def)) {
+        continue;
+      }
+
+      const speedIndex = this.normalizeNoiseSpeedIndex(Number(entry[1]));
+      if (speedIndex <= 0) {
+        continue;
+      }
+
+      const state = this.paramFunctionStates.get(def.key) ?? {
+        noiseSpeedIndex: 0,
+        noiseDomain: this.createNoiseDomain(),
+      };
+      state.noiseSpeedIndex = speedIndex;
+      this.paramFunctionStates.set(def.key, state);
+    }
+
     this.syncHudValues();
     if (persist) {
       this.persistCurrentPluginSettings();

@@ -35,8 +35,7 @@ const SPEED_OPTIONS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
 const SNAPSHOT_BACKGROUND = "#ffffff";
 const SELECTED_PLUGIN_STORAGE_KEY = "gensynth:selected-plugin:v1";
 const FPS_SAMPLE_INTERVAL_MS = 500;
-const SHARE_QUERY_PARAM = "share";
-const SHARE_HASH_PREFIX = "share.";
+const SHARE_PAYLOAD_PATTERN = /^[A-Za-z0-9_-]+$/u;
 const SHARE_SCHEMA_VERSION = 1;
 const SHARE_FEEDBACK_DURATION_MS = 1800;
 
@@ -455,9 +454,9 @@ function createShareUrl() {
   }
 
   const payload = {
-    version: SHARE_SCHEMA_VERSION,
-    algo: algoId,
-    settings: engine.getCurrentPluginSettings(),
+    v: SHARE_SCHEMA_VERSION,
+    a: algoId,
+    s: engine.getCompactPluginSettings(),
   };
   const encoded = encodeSharePayload(payload);
   if (!encoded) {
@@ -465,51 +464,34 @@ function createShareUrl() {
   }
 
   const url = new URL(window.location.href);
-  url.searchParams.delete(SHARE_QUERY_PARAM);
-  url.hash = `${SHARE_HASH_PREFIX}${encoded}`;
+  url.search = `?${encoded}`;
+  url.hash = "";
   return url.toString();
 }
 
 function readSharedPayloadFromAddress() {
   const url = new URL(window.location.href);
-  const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
-  if (hash.startsWith(SHARE_HASH_PREFIX)) {
-    return {
-      encoded: hash.slice(SHARE_HASH_PREFIX.length),
-      source: "hash",
-    };
+  const raw = url.search.startsWith("?")
+    ? url.search.slice(1)
+    : url.search;
+
+  if (!raw || raw.includes("&") || raw.includes("=") || !SHARE_PAYLOAD_PATTERN.test(raw)) {
+    return null;
   }
 
-  const queryPayload = url.searchParams.get(SHARE_QUERY_PARAM);
-  if (typeof queryPayload === "string" && queryPayload.length > 0) {
-    return {
-      encoded: queryPayload,
-      source: "query",
-    };
-  }
-
-  return null;
+  return raw;
 }
 
-function clearShareParamFromAddress(source) {
+function clearShareParamFromAddress() {
   const url = new URL(window.location.href);
-  let changed = false;
-
-  if (source === "hash") {
-    const hash = url.hash.startsWith("#") ? url.hash.slice(1) : url.hash;
-    if (hash.startsWith(SHARE_HASH_PREFIX)) {
-      url.hash = "";
-      changed = true;
-    }
-  } else if (source === "query" && url.searchParams.has(SHARE_QUERY_PARAM)) {
-    url.searchParams.delete(SHARE_QUERY_PARAM);
-    changed = true;
-  }
-
-  if (!changed) {
+  const raw = url.search.startsWith("?")
+    ? url.search.slice(1)
+    : url.search;
+  if (!raw || !SHARE_PAYLOAD_PATTERN.test(raw)) {
     return;
   }
 
+  url.search = "";
   const cleaned = `${url.pathname}${url.search}${url.hash}`;
   window.history.replaceState({}, "", cleaned);
 }
@@ -532,26 +514,26 @@ async function copyShareUrlToClipboard() {
 }
 
 function applySharedStateFromUrl() {
-  const shared = readSharedPayloadFromAddress();
-  if (!shared?.encoded) {
+  const encoded = readSharedPayloadFromAddress();
+  if (!encoded) {
     return;
   }
 
   try {
-    const payload = decodeSharePayload(shared.encoded);
+    const payload = decodeSharePayload(encoded);
     if (!payload) {
       return;
     }
 
-    if (Number.isFinite(payload.version) && payload.version !== SHARE_SCHEMA_VERSION) {
+    if (payload.v !== SHARE_SCHEMA_VERSION) {
       return;
     }
 
-    if (typeof payload.algo !== "string") {
+    if (typeof payload.a !== "string") {
       return;
     }
 
-    const plugin = pluginsById.get(payload.algo);
+    const plugin = pluginsById.get(payload.a);
     if (!plugin) {
       return;
     }
@@ -560,11 +542,11 @@ function applySharedStateFromUrl() {
     algoSelect.value = plugin.id;
     persistSelectedPluginId(plugin.id);
 
-    if (payload.settings && typeof payload.settings === "object") {
-      engine.applyCurrentPluginSettings(payload.settings);
+    if (payload.s && typeof payload.s === "object") {
+      engine.applyCompactPluginSettings(payload.s);
     }
   } finally {
-    clearShareParamFromAddress(shared.source);
+    clearShareParamFromAddress();
   }
 }
 
