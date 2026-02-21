@@ -2,6 +2,7 @@ import { GenSynthEngine } from "./engine.js";
 import { arcsPlugin } from "./plugins/arcs.js";
 import { circlesPlugin } from "./plugins/circles.js";
 import { linesPlugin } from "./plugins/lines.js";
+import { snakesPlugin } from "./plugins/snakes.js";
 import { segmentsPlugin } from "./plugins/segments.js";
 import { spiralsPlugin } from "./plugins/spirals.js";
 import { squigglesPlugin } from "./plugins/squiggles.js";
@@ -29,7 +30,7 @@ const PLAY_ICON_PATH = "M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3
 const PAUSE_ICON_PATH = "M6 4h4v16H6zM14 4h4v16h-4z";
 const MINIMIZE_ICON_PATH = "M5 12h14";
 const MAXIMIZE_ICON_PATH = "M12 5v14M5 12h14";
-const SPEED_OPTIONS = [1, 2, 4, 8, 16, 32];
+const SPEED_OPTIONS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
 const SNAPSHOT_BACKGROUND = "#ffffff";
 const SELECTED_PLUGIN_STORAGE_KEY = "gensynth:selected-plugin:v1";
 const FPS_SAMPLE_INTERVAL_MS = 500;
@@ -46,6 +47,7 @@ const plugins = [
   arcsPlugin,
   circlesPlugin,
   linesPlugin,
+  snakesPlugin,
   segmentsPlugin,
   spiralsPlugin,
   squigglesPlugin,
