@@ -469,6 +469,14 @@ export class GenSynthEngine {
     };
   }
 
+  getCurrentPluginId() {
+    return this.plugin?.id ?? null;
+  }
+
+  getCurrentPluginSettings() {
+    return this.serializeCurrentPluginSettings();
+  }
+
   persistCurrentPluginSettings({ immediate = false } = {}) {
     const pluginId = this.plugin?.id;
     if (!pluginId) {
@@ -491,6 +499,28 @@ export class GenSynthEngine {
     }
 
     const saved = this.persistedPluginSettings[pluginId];
+    if (!saved || typeof saved !== "object") {
+      return;
+    }
+
+    this.applyPluginSettingsObject(saved);
+  }
+
+  applyCurrentPluginSettings(settings, { persist = true } = {}) {
+    if (!settings || typeof settings !== "object") {
+      return false;
+    }
+
+    this.applyPluginSettingsObject(settings);
+    this.syncHudValues();
+    if (persist) {
+      this.persistCurrentPluginSettings();
+    }
+
+    return true;
+  }
+
+  applyPluginSettingsObject(saved) {
     if (!saved || typeof saved !== "object") {
       return;
     }

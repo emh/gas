@@ -217,6 +217,16 @@ body::before {
   background: linear-gradient(180deg, #eef3f6, #dfe6ec);
 }
 
+.controls .share-btn.is-copied {
+  border-color: #8fb2a4;
+  background: linear-gradient(180deg, #edf7f2, #dfeee7);
+}
+
+.controls .share-btn.is-error {
+  border-color: #d3a5a5;
+  background: linear-gradient(180deg, #fbefef, #f2e1e1);
+}
+
 .controls button:not(.speed-btn) {
   width: 34px;
   height: 34px;

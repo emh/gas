@@ -16,6 +16,7 @@ const playPauseBtn = document.getElementById("play-pause-btn");
 const restartBtn = document.getElementById("restart-btn");
 const speedBtn = document.getElementById("speed-btn");
 const cameraBtn = document.getElementById("camera-btn");
+const shareBtn = document.getElementById("share-btn");
 const infoBtn = document.getElementById("info-btn");
 const fpsIndicator = document.getElementById("fps-indicator");
 const playPauseIconPath = document.getElementById("play-pause-icon-path");
@@ -34,6 +35,9 @@ const SPEED_OPTIONS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
 const SNAPSHOT_BACKGROUND = "#ffffff";
 const SELECTED_PLUGIN_STORAGE_KEY = "gensynth:selected-plugin:v1";
 const FPS_SAMPLE_INTERVAL_MS = 500;
+const SHARE_QUERY_PARAM = "share";
+const SHARE_SCHEMA_VERSION = 1;
+const SHARE_FEEDBACK_DURATION_MS = 1800;
 
 let paramsCollapsed = false;
 let speedIndex = 0;
@@ -42,6 +46,7 @@ let fpsSampleStartMs = 0;
 let fpsFrameCount = 0;
 let fpsVisible = false;
 let infoVisible = false;
+let shareFeedbackTimer = 0;
 
 const plugins = [
   arcsPlugin,
@@ -320,6 +325,215 @@ function downloadCanvasSnapshot() {
   link.remove();
 }
 
+function resetShareButtonUi() {
+  if (!shareBtn) {
+    return;
+  }
+
+  shareBtn.classList.remove("is-copied", "is-error");
+  shareBtn.setAttribute("aria-label", "Copy share URL");
+  shareBtn.title = "Copy share URL";
+}
+
+function setShareButtonUiCopied() {
+  if (!shareBtn) {
+    return;
+  }
+
+  shareBtn.classList.remove("is-error");
+  shareBtn.classList.add("is-copied");
+  shareBtn.setAttribute("aria-label", "Share URL copied");
+  shareBtn.title = "Share URL copied";
+}
+
+function setShareButtonUiError() {
+  if (!shareBtn) {
+    return;
+  }
+
+  shareBtn.classList.remove("is-copied");
+  shareBtn.classList.add("is-error");
+  shareBtn.setAttribute("aria-label", "Unable to copy share URL");
+  shareBtn.title = "Unable to copy share URL";
+}
+
+function scheduleShareButtonUiReset() {
+  if (shareFeedbackTimer) {
+    clearTimeout(shareFeedbackTimer);
+  }
+
+  shareFeedbackTimer = window.setTimeout(() => {
+    shareFeedbackTimer = 0;
+    resetShareButtonUi();
+  }, SHARE_FEEDBACK_DURATION_MS);
+}
+
+function encodeSharePayload(payload) {
+  try {
+    const json = JSON.stringify(payload);
+    const bytes = new TextEncoder().encode(json);
+    let binary = "";
+    for (const byte of bytes) {
+      binary += String.fromCharCode(byte);
+    }
+
+    return btoa(binary)
+      .replace(/\+/gu, "-")
+      .replace(/\//gu, "_")
+      .replace(/=+$/u, "");
+  } catch {
+    return null;
+  }
+}
+
+function decodeSharePayload(encoded) {
+  if (typeof encoded !== "string" || encoded.length === 0) {
+    return null;
+  }
+
+  try {
+    const normalized = encoded.replace(/-/gu, "+").replace(/_/gu, "/");
+    const padding = "=".repeat((4 - (normalized.length % 4)) % 4);
+    const binary = atob(normalized + padding);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+
+    const json = new TextDecoder().decode(bytes);
+    const payload = JSON.parse(json);
+    if (!payload || typeof payload !== "object") {
+      return null;
+    }
+
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function fallbackCopyText(text) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.append(textarea);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } catch {
+    copied = false;
+  }
+
+  textarea.remove();
+  return copied;
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fallback below.
+    }
+  }
+
+  return fallbackCopyText(text);
+}
+
+function createShareUrl() {
+  const algoId = engine.getCurrentPluginId();
+  if (typeof algoId !== "string" || algoId.length === 0) {
+    return null;
+  }
+
+  const payload = {
+    version: SHARE_SCHEMA_VERSION,
+    algo: algoId,
+    settings: engine.getCurrentPluginSettings(),
+  };
+  const encoded = encodeSharePayload(payload);
+  if (!encoded) {
+    return null;
+  }
+
+  const url = new URL(window.location.href);
+  url.searchParams.set(SHARE_QUERY_PARAM, encoded);
+  return url.toString();
+}
+
+function clearShareParamFromAddress() {
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has(SHARE_QUERY_PARAM)) {
+    return;
+  }
+
+  url.searchParams.delete(SHARE_QUERY_PARAM);
+  const cleaned = `${url.pathname}${url.search}${url.hash}`;
+  window.history.replaceState({}, "", cleaned);
+}
+
+async function copyShareUrlToClipboard() {
+  const shareUrl = createShareUrl();
+  if (!shareUrl) {
+    setShareButtonUiError();
+    scheduleShareButtonUiReset();
+    return;
+  }
+
+  const copied = await copyTextToClipboard(shareUrl);
+  if (copied) {
+    setShareButtonUiCopied();
+  } else {
+    setShareButtonUiError();
+  }
+  scheduleShareButtonUiReset();
+}
+
+function applySharedStateFromUrl() {
+  const url = new URL(window.location.href);
+  const encoded = url.searchParams.get(SHARE_QUERY_PARAM);
+  if (!encoded) {
+    return;
+  }
+
+  try {
+    const payload = decodeSharePayload(encoded);
+    if (!payload) {
+      return;
+    }
+
+    if (Number.isFinite(payload.version) && payload.version !== SHARE_SCHEMA_VERSION) {
+      return;
+    }
+
+    if (typeof payload.algo !== "string") {
+      return;
+    }
+
+    const plugin = pluginsById.get(payload.algo);
+    if (!plugin) {
+      return;
+    }
+
+    engine.setPlugin(plugin);
+    algoSelect.value = plugin.id;
+    persistSelectedPluginId(plugin.id);
+
+    if (payload.settings && typeof payload.settings === "object") {
+      engine.applyCurrentPluginSettings(payload.settings);
+    }
+  } finally {
+    clearShareParamFromAddress();
+  }
+}
+
 const engine = new GenSynthEngine({
   canvas,
   paramsForm,
@@ -336,6 +550,8 @@ setPlaybackSpeed(0);
 setFpsVisible(false);
 setInfoVisible(true);
 setInfoDiagramCallout("");
+resetShareButtonUi();
+applySharedStateFromUrl();
 
 playPauseBtn?.addEventListener("click", () => {
   if (engine.running) {
@@ -369,6 +585,10 @@ speedBtn?.addEventListener("click", () => {
 
 cameraBtn?.addEventListener("click", () => {
   downloadCanvasSnapshot();
+});
+
+shareBtn?.addEventListener("click", async () => {
+  await copyShareUrlToClipboard();
 });
 
 infoBtn?.addEventListener("click", () => {
@@ -422,6 +642,10 @@ window.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("beforeunload", () => {
+  if (shareFeedbackTimer) {
+    clearTimeout(shareFeedbackTimer);
+    shareFeedbackTimer = 0;
+  }
   stopFpsMonitor();
   engine.destroy();
 });
